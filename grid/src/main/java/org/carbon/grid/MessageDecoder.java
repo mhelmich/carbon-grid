@@ -38,7 +38,7 @@ class MessageDecoder extends ReplayingDecoder<Message> {
         }
 
         // then read the rest of the message
-        if (in.readableBytes() >= messageType.byteSize) {
+        if (in.readableBytes() >= messageType.metadataByteSize) {
             Message m = Message.newMessage(messageType, in);
             list.add(m);
         } else {

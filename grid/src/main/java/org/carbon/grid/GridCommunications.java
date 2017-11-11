@@ -19,20 +19,38 @@ package org.carbon.grid;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 
-import java.util.concurrent.ConcurrentHashMap;
+import java.io.Closeable;
+import java.io.IOException;
+import java.util.concurrent.Future;
 
-class Communications {
+class GridCommunications implements AutoCloseable, Closeable {
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
-    private final Cache cache;
+    private final NodeRegistry nodeRegistry = new NodeRegistry();
     private final UdpGridServer udpGridServer;
-    private final ConcurrentHashMap<Short, UdpGridClient> nodeIdsToClient = new ConcurrentHashMap<>();
+    private final Cache cache;
 
-    Communications(int port, Cache cache) {
+    GridCommunications(int port, Cache cache) {
         this.udpGridServer = new UdpGridServer(port, workerGroup, cache);
         this.cache = cache;
     }
 
     void addPeer(short nodeId, String host, int port) {
-        nodeIdsToClient.put(nodeId, new UdpGridClient(host, port, workerGroup, cache));
+        nodeRegistry.addPeer(nodeId, host, port);
+    }
+
+    Future<Void> send(Message msg) throws IOException {
+        // TODO -- factor this into a connection pool
+        try (UdpGridClient client = new UdpGridClient(nodeRegistry, workerGroup, cache)) {
+            return client.send(msg);
+        }
+    }
+
+    @Override
+    public void close() throws IOException {
+        try {
+            udpGridServer.close();
+        } finally {
+            workerGroup.shutdownGracefully();
+        }
     }
 }

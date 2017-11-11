@@ -17,18 +17,26 @@
 package org.carbon.grid;
 
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.socket.DatagramPacket;
+import io.netty.util.CharsetUtil;
 
-class GridClientHandler extends ChannelInboundHandlerAdapter {
+class GridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     private final Cache cache;
 
     GridClientHandler(Cache cache) {
         this.cache = cache;
     }
 
+//    @Override
+//    public void channelRead(ChannelHandlerContext ctx, Object o) {
+//        Message request = (Message)o;
+//        cache.handleMessage(request);
+//    }
+
     @Override
-    public void channelRead(ChannelHandlerContext ctx, Object o) {
-        Message request = (Message)o;
-        cache.handleMessage(request);
+    protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) throws Exception {
+        String response = packet.content().toString(CharsetUtil.UTF_8);
+        System.err.println(response);
     }
 }

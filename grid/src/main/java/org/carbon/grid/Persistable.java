@@ -16,7 +16,11 @@
 
 package org.carbon.grid;
 
-public interface Cache {
-    void handleResponse(Message.Response response);
-    Message.Response handleRequest(Message.Request request);
+import java.io.InputStream;
+import java.io.OutputStream;
+
+public interface Persistable {
+    int byteSize();
+    void write(OutputStream out);
+    void read(InputStream in);
 }

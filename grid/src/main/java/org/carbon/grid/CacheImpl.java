@@ -18,7 +18,29 @@ package org.carbon.grid;
 
 class CacheImpl implements Cache {
     @Override
-    public Message handleMessage(Message request) {
-        return null;
+    public void handleResponse(Message.Response response) {
+        switch (response.type) {
+            case ACK:
+                handleACK(response);
+                return;
+            default:
+                throw new RuntimeException("Unknown type " + response.type);
+        }
     }
+
+    @Override
+    public Message.Response handleRequest(Message.Request request) {
+        switch (request.type) {
+            case GET:
+                return handleGET(request);
+            default:
+                throw new RuntimeException("Unknown type " + request.type);
+        }
+    }
+
+    private Message.Response handleGET(Message request) {
+        return new Message.ACK(request);
+    }
+
+    private void handleACK(Message request) { }
 }

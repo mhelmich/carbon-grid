@@ -16,7 +16,19 @@
 
 package org.carbon.grid;
 
-public interface Cache {
-    void handleResponse(Message.Response response);
-    Message.Response handleRequest(Message.Request request);
+import io.netty.util.internal.SocketUtils;
+
+import java.net.InetSocketAddress;
+import java.util.concurrent.ConcurrentHashMap;
+
+class NodeRegistry {
+    private final ConcurrentHashMap<Short, InetSocketAddress> nodeIdsToAddresses = new ConcurrentHashMap<>(16, .75f, 2);
+
+    void addPeer(short nodeId, String host, int port) {
+        nodeIdsToAddresses.put(nodeId, SocketUtils.socketAddress(host, port));
+    }
+
+    InetSocketAddress lookup(short nodeId) {
+        return nodeIdsToAddresses.get(nodeId);
+    }
 }

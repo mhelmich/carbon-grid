@@ -40,8 +40,8 @@ class UdpGridServer implements Closeable, AutoCloseable {
                     @Override
                     public void initChannel(final NioDatagramChannel ch) throws Exception {
                         ch.pipeline().addLast(
-                                new MessageDecoder(),
-                                new MessageEncoder(),
+//                                new MessageDecoder(),
+//                                new MessageEncoder(),
                                 new GridServerHandler(cache)
                         );
                     }

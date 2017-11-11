@@ -17,41 +17,55 @@
 package org.carbon.grid;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufOutputStream;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.concurrent.Future;
 
 class UdpGridClient implements Closeable, AutoCloseable {
     private final ChannelFuture channelFuture;
+    private final NodeRegistry nodeRegistry;
 
-    UdpGridClient(String host, int port, EventLoopGroup workerGroup, Cache cache) {
+    UdpGridClient(NodeRegistry nodeRegistry, EventLoopGroup workerGroup, Cache cache) {
+        this.nodeRegistry = nodeRegistry;
         Bootstrap b = new Bootstrap();
         b.group(workerGroup)
-                .channel(NioDatagramChannel.class)
-                .option(ChannelOption.SO_BROADCAST, true)
-                .handler(new ChannelInitializer<NioDatagramChannel>() {
-                    @Override
-                    protected void initChannel(NioDatagramChannel ch) throws Exception {
-                        ch.pipeline().addLast(
-                                new MessageDecoder(),
-                                new MessageEncoder(),
-                                new GridClientHandler(cache)
-                        );
-                    }
-                });
-
-        channelFuture = b.bind(host, port);
+            .channel(NioDatagramChannel.class)
+            .option(ChannelOption.SO_BROADCAST, true)
+            .handler(new GridClientHandler(cache));
+        channelFuture = b.bind(0);
     }
 
-    void send(Message request) {
-        Channel ch = channelFuture.channel();
-        ch.writeAndFlush(request);
+    Future<Void> send(Message request) {
+        InetSocketAddress addr = nodeRegistry.lookup(request.node);
+        // TODO -- if addr == null ?
+        Channel ch = channelFuture.syncUninterruptibly().channel();
+        ByteBuf bites = ch.alloc().buffer(request.calcByteSize());
+        try {
+            try (ByteBufOutputStream out = new ByteBufOutputStream(bites)) {
+                request.write(out);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            return ch.writeAndFlush(
+                    new DatagramPacket(
+                            bites,
+                            addr
+                    )
+            );
+        } finally {
+            bites.release();
+        }
     }
 
     @Override
