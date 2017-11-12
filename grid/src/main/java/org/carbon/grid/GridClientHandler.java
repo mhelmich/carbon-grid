@@ -16,6 +16,7 @@
 
 package org.carbon.grid;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
@@ -28,15 +29,12 @@ class GridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
         this.cache = cache;
     }
 
-//    @Override
-//    public void channelRead(ChannelHandlerContext ctx, Object o) {
-//        Message request = (Message)o;
-//        cache.handleMessage(request);
-//    }
-
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) throws Exception {
-        String response = packet.content().toString(CharsetUtil.UTF_8);
-        System.err.println(response);
+        ByteBuf in = packet.content();
+        String response = in.toString(CharsetUtil.UTF_8);
+        System.err.println("client: " + response);
+        Message.MessageType messageType = Message.MessageType.fromByte(in.readByte());
+        System.err.println("client message type: " + messageType);
     }
 }

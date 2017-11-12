@@ -31,41 +31,28 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
 
-class UdpGridClient implements Closeable, AutoCloseable {
+class UdpGridClient implements Closeable {
     private final ChannelFuture channelFuture;
-    private final NodeRegistry nodeRegistry;
+    private final InetSocketAddress addr;
 
-    UdpGridClient(NodeRegistry nodeRegistry, EventLoopGroup workerGroup, Cache cache) {
-        this.nodeRegistry = nodeRegistry;
+    UdpGridClient(InetSocketAddress addr, EventLoopGroup workerGroup, Cache cache) {
         Bootstrap b = new Bootstrap();
         b.group(workerGroup)
-            .channel(NioDatagramChannel.class)
-            .option(ChannelOption.SO_BROADCAST, true)
-            .handler(new GridClientHandler(cache));
-        channelFuture = b.bind(0);
+                .channel(NioDatagramChannel.class)
+                .option(ChannelOption.SO_BROADCAST, true)
+                .handler(new GridClientHandler(cache));
+        this.channelFuture = b.bind(0);
+        this.addr = addr;
     }
 
-    Future<Void> send(Message request) {
-        InetSocketAddress addr = nodeRegistry.lookup(request.node);
-        // TODO -- if addr == null ?
+    Future<Void> send(Message request) throws IOException {
         Channel ch = channelFuture.syncUninterruptibly().channel();
         ByteBuf bites = ch.alloc().buffer(request.calcByteSize());
-        try {
-            try (ByteBufOutputStream out = new ByteBufOutputStream(bites)) {
-                request.write(out);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            return ch.writeAndFlush(
-                    new DatagramPacket(
-                            bites,
-                            addr
-                    )
-            );
-        } finally {
-            bites.release();
+        try (ByteBufOutputStream out = new ByteBufOutputStream(bites)) {
+            request.write(out);
         }
+
+        return ch.writeAndFlush(new DatagramPacket(bites, addr));
     }
 
     @Override

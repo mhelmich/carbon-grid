@@ -26,12 +26,10 @@ import io.netty.channel.socket.nio.NioDatagramChannel;
 import java.io.Closeable;
 import java.io.IOException;
 
-class UdpGridServer implements Closeable, AutoCloseable {
-    private final Cache cache;
+class UdpGridServer implements Closeable {
     private final Channel channel;
 
     UdpGridServer(int port, EventLoopGroup workerGroup, Cache cache) {
-        this.cache = cache;
         Bootstrap b = new Bootstrap();
         b.group(workerGroup)
                 .channel(NioDatagramChannel.class)
@@ -40,8 +38,6 @@ class UdpGridServer implements Closeable, AutoCloseable {
                     @Override
                     public void initChannel(final NioDatagramChannel ch) throws Exception {
                         ch.pipeline().addLast(
-//                                new MessageDecoder(),
-//                                new MessageEncoder(),
                                 new GridServerHandler(cache)
                         );
                     }

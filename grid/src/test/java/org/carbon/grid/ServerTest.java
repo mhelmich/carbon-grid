@@ -19,10 +19,14 @@ package org.carbon.grid;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+
+import static org.junit.Assert.assertTrue;
 
 public class ServerTest {
     @Test
-    public void testBasic() throws IOException {
+    public void testBasic() throws IOException, ExecutionException, InterruptedException {
         short node1 = 123;
         short node2 = 456;
         int port1 = 4444;
@@ -35,6 +39,8 @@ public class ServerTest {
         comm2.addPeer(node1, "localhost", port2);
 
         Message.GET get = new Message.GET(node2, 999L);
-        comm1.send(get);
+        Future<Void> f1 = comm1.send(get);
+        f1.get();
+        assertTrue(f1.isDone());
     }
 }

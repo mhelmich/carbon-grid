@@ -16,35 +16,34 @@
 
 package org.carbon.grid;
 
-import io.netty.buffer.ByteBuf;
-
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
-abstract class Message implements Persistable, Cloneable {
+abstract class Message implements Persistable {
 
     // NEVER CHANGE THE ORDINALS!!!
     // first parameter is the ordinal
     // the second parameter is the message byte size after reading the first type byte
     enum MessageType {
-        PUT((byte)0, 999),
-        GET((byte)1, 12),             // msgId + line = 4 + 8 = 12
-        ACK((byte)2, 4),              // msgId = 4
-        INVALIDATE((byte)3, 999),
-        INVALIDATE_ACK((byte)4, 999),
-        BACKUP((byte)5, 999),
-        BACUP_ACK((byte)6, 999);
+        PUT((byte)0),
+        GET((byte)1),
+        ACK((byte)2),
+        INVALIDATE((byte)3),
+        INVALIDATE_ACK((byte)4),
+        BACKUP((byte)5),
+        BACUP_ACK((byte)6);
 
-        private final static Map<Byte, MessageType> lookUp = new HashMap<>(MessageType.values().length);
+        private final static Map<Byte, MessageType> byteToType = new HashMap<>(MessageType.values().length);
         static {
             Set<Byte> ordinals = new HashSet<>(MessageType.values().length);
             for (MessageType type : MessageType.values()) {
-                lookUp.put(type.ordinal, type);
+                byteToType.put(type.ordinal, type);
 
                 if (!ordinals.add(type.ordinal)) {
                     throw new RuntimeException("Can't add ordinal " + type.ordinal + " twice!");
@@ -53,14 +52,21 @@ abstract class Message implements Persistable, Cloneable {
         }
 
         final byte ordinal;
-        final int metadataByteSize;
-        MessageType(byte ordinal, int metadataByteSize) {
+        MessageType(byte ordinal) {
             this.ordinal = ordinal;
-            this.metadataByteSize = metadataByteSize;
         }
 
         static MessageType fromByte(byte b) {
-            return lookUp.get(b);
+            return byteToType.get(b);
+        }
+    }
+
+    static Request getRequestForType(MessageType type) {
+        switch (type) {
+            case GET:
+                return new GET();
+            default:
+                throw new IllegalArgumentException("Unknown type " + type);
         }
     }
 
@@ -71,16 +77,16 @@ abstract class Message implements Persistable, Cloneable {
     // this field has two semantics
     // 1. in a request it is the sender
     // 2. in a response it's the receiver
-    short node;
+    short sender;
 
     private Message(MessageType type, Message inResponseTo) {
-        this(type, inResponseTo.messageId, inResponseTo.node);
+        this(type, inResponseTo.messageId, inResponseTo.sender);
     }
 
-    private Message(MessageType type, int messageId, short node) {
+    private Message(MessageType type, int messageId, short sender) {
         this.type = type;
         this.messageId = messageId;
-        this.node = node;
+        this.sender = sender;
     }
 
     private static int newMessageId() {
@@ -91,24 +97,16 @@ abstract class Message implements Persistable, Cloneable {
         return messageId;
     }
 
-    @Deprecated
-    static Message newMessage(MessageType type, ByteBuf bites) {
-        switch (type) {
-//            case GET:
-//                return new GET(bites.readShort(), bites.readLong());
-//            case ACK:
-//                return new ACK();
-            default:
-                throw new RuntimeException("Unknown message type " + type);
-        }
-    }
-
     @Override
     public int byteSize() {
         return calcByteSize();
     }
 
-    abstract int calcByteSize();
+    int calcByteSize() {
+        return 1     // message type byte
+             + 2     // sender short
+               ;
+    }
 
     static abstract class Request extends Message {
         private Request(MessageType type, int messageId, short node) {
@@ -122,17 +120,12 @@ abstract class Message implements Persistable, Cloneable {
         }
     }
 
-    static Message newResponseTo(MessageType responseType, Message inResponseTo) {
-        switch (responseType) {
-            case ACK:
-                return new ACK(inResponseTo);
-            default:
-                throw new RuntimeException("Unknown message type " + responseType);
-        }
-    }
-
     static class GET extends Request {
         private long lineId;
+
+        GET() {
+            this(-1, -1);
+        }
 
         GET(short node, long lineId) {
             super(MessageType.GET, Message.newMessageId(), node);
@@ -151,17 +144,21 @@ abstract class Message implements Persistable, Cloneable {
 
         @Override
         int calcByteSize() {
-            return 0;
+            return super.calcByteSize()
+                    + 8; // lineId long
         }
 
         @Override
-        public void write(OutputStream out) {
-
+        public void write(DataOutput out) throws IOException {
+            out.writeByte(MessageType.GET.ordinal);
+            out.writeShort(sender);
+            out.writeLong(lineId);
         }
 
         @Override
-        public void read(InputStream in) {
-
+        public void read(DataInput in) throws IOException {
+            sender = in.readShort();
+            lineId = in.readLong();
         }
     }
 
@@ -172,17 +169,18 @@ abstract class Message implements Persistable, Cloneable {
 
         @Override
         int calcByteSize() {
-            return 0;
+            return super.calcByteSize();
         }
 
         @Override
-        public void write(OutputStream out) {
-
+        public void write(DataOutput out) throws IOException {
+            out.writeByte(MessageType.ACK.ordinal);
+            out.writeShort(sender);
         }
 
         @Override
-        public void read(InputStream in) {
-
+        public void read(DataInput in) throws IOException {
+            sender = in.readShort();
         }
     }
 

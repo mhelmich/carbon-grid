@@ -23,15 +23,14 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.concurrent.Future;
 
-class GridCommunications implements AutoCloseable, Closeable {
+class GridCommunications implements Closeable {
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
-    private final NodeRegistry nodeRegistry = new NodeRegistry();
+    private final NodeRegistry nodeRegistry;
     private final UdpGridServer udpGridServer;
-    private final Cache cache;
 
     GridCommunications(int port, Cache cache) {
         this.udpGridServer = new UdpGridServer(port, workerGroup, cache);
-        this.cache = cache;
+        this.nodeRegistry = new NodeRegistry(workerGroup, cache);
     }
 
     void addPeer(short nodeId, String host, int port) {
@@ -40,17 +39,20 @@ class GridCommunications implements AutoCloseable, Closeable {
 
     Future<Void> send(Message msg) throws IOException {
         // TODO -- factor this into a connection pool
-        try (UdpGridClient client = new UdpGridClient(nodeRegistry, workerGroup, cache)) {
-            return client.send(msg);
-        }
+        UdpGridClient client = nodeRegistry.getClientForNode(msg.sender);
+        return client.send(msg);
     }
 
     @Override
     public void close() throws IOException {
         try {
-            udpGridServer.close();
+            nodeRegistry.close();
         } finally {
-            workerGroup.shutdownGracefully();
+            try {
+                udpGridServer.close();
+            } finally {
+                workerGroup.shutdownGracefully();
+            }
         }
     }
 }

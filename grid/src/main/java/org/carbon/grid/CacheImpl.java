@@ -38,9 +38,10 @@ class CacheImpl implements Cache {
         }
     }
 
-    private Message.Response handleGET(Message request) {
+    private Message.Response handleGET(Message.Request request) {
+        System.err.println("cache handler get");
         return new Message.ACK(request);
     }
 
-    private void handleACK(Message request) { }
+    private void handleACK(Message.Response response) { }
 }

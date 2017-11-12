@@ -17,7 +17,8 @@
 package org.carbon.grid;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+import io.netty.buffer.ByteBufInputStream;
+import io.netty.buffer.ByteBufOutputStream;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
@@ -30,23 +31,25 @@ class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
         this.cache = cache;
     }
 
-//    @Override
-//    public void channelRead(ChannelHandlerContext ctx, DatagramPacket o) {
-//        Message request = (Message)o;
-//        Message response = cache.handleMessage(request);
-//        ctx.writeAndFlush(response);
-//    }
-
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) throws Exception {
-        ByteBuf in = packet.content();
-        Message.MessageType messageType = Message.MessageType.fromByte(in.readByte());
-        System.err.println(packet.content().toString(CharsetUtil.UTF_8));
-        ctx.writeAndFlush(new DatagramPacket(Unpooled.copiedBuffer(packet.content()), packet.sender()));
-    }
+        ByteBuf inBites = packet.content();
+        System.err.println("server: " + inBites.toString(CharsetUtil.UTF_8));
+        Message.MessageType requestMessageType = Message.MessageType.fromByte(inBites.readByte());
+        Message.Request request = Message.getRequestForType(requestMessageType);
 
-//    @Override
-//    public void channelReadComplete(ChannelHandlerContext ctx) {
-//        ctx.flush();
-//    }
+        try (ByteBufInputStream in = new ByteBufInputStream(inBites)) {
+            request.read(in);
+        }
+
+        System.err.println("server message type: " + requestMessageType);
+        Message.Response response = cache.handleRequest(request);
+
+        ByteBuf outBites = ctx.alloc().buffer(request.calcByteSize());
+        try (ByteBufOutputStream out = new ByteBufOutputStream(outBites)) {
+            response.write(out);
+        }
+
+        ctx.writeAndFlush(new DatagramPacket(outBites, packet.sender()));
+    }
 }
