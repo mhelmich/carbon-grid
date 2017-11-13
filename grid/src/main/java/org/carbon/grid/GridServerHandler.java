@@ -22,9 +22,11 @@ import io.netty.buffer.ByteBufOutputStream;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
-import io.netty.util.CharsetUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
+    private final static Logger logger = LoggerFactory.getLogger(GridServerHandler.class);
     private final Cache cache;
 
     GridServerHandler(Cache cache) {
@@ -34,7 +36,6 @@ class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) throws Exception {
         ByteBuf inBites = packet.content();
-        System.err.println("server: " + inBites.toString(CharsetUtil.UTF_8));
         Message.MessageType requestMessageType = Message.MessageType.fromByte(inBites.readByte());
         Message.Request request = Message.getRequestForType(requestMessageType);
 
@@ -42,7 +43,7 @@ class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
             request.read(in);
         }
 
-        System.err.println("server message type: " + requestMessageType);
+        logger.info("Received message type: {} messageId {}", requestMessageType, request.messageId);
         Message.Response response = cache.handleRequest(request);
 
         ByteBuf outBites = ctx.alloc().buffer(request.calcByteSize());

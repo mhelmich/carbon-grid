@@ -18,12 +18,15 @@ package org.carbon.grid;
 
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.concurrent.Future;
 
 class GridCommunications implements Closeable {
+    private final static Logger logger = LoggerFactory.getLogger(GridCommunications.class);
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
     private final NodeRegistry nodeRegistry;
     private final UdpGridServer udpGridServer;
@@ -34,6 +37,7 @@ class GridCommunications implements Closeable {
     }
 
     void addPeer(short nodeId, String host, int port) {
+        logger.info("adding peer {} {} {}", nodeId, host, port);
         nodeRegistry.addPeer(nodeId, host, port);
     }
 

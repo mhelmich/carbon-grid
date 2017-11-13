@@ -17,12 +17,15 @@
 package org.carbon.grid;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufInputStream;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
-import io.netty.util.CharsetUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 class GridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
+    private final static Logger logger = LoggerFactory.getLogger(GridClientHandler.class);
     private final Cache cache;
 
     GridClientHandler(Cache cache) {
@@ -31,10 +34,15 @@ class GridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket packet) throws Exception {
-        ByteBuf in = packet.content();
-        String response = in.toString(CharsetUtil.UTF_8);
-        System.err.println("client: " + response);
-        Message.MessageType messageType = Message.MessageType.fromByte(in.readByte());
-        System.err.println("client message type: " + messageType);
+        ByteBuf inBites = packet.content();
+        Message.MessageType messageType = Message.MessageType.fromByte(inBites.readByte());
+        Message.Response response = Message.getResponseForType(messageType);
+
+        try (ByteBufInputStream in = new ByteBufInputStream(inBites)) {
+            response.read(in);
+        }
+
+        logger.info("Received message type: {} messageId {}", messageType, response.messageId);
+        cache.handleResponse(response);
     }
 }

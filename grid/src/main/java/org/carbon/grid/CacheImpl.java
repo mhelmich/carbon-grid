@@ -16,7 +16,12 @@
 
 package org.carbon.grid;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 class CacheImpl implements Cache {
+    private final static Logger logger = LoggerFactory.getLogger(CacheImpl.class);
+
     @Override
     public void handleResponse(Message.Response response) {
         switch (response.type) {
@@ -39,9 +44,11 @@ class CacheImpl implements Cache {
     }
 
     private Message.Response handleGET(Message.Request request) {
-        System.err.println("cache handler get");
+        logger.info("cache handler get: {}", request);
         return new Message.ACK(request);
     }
 
-    private void handleACK(Message.Response response) { }
+    private void handleACK(Message.Response response) {
+        logger.info("cache handler ack: {}", response);
+    }
 }

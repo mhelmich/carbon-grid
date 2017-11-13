@@ -61,6 +61,15 @@ abstract class Message implements Persistable {
         }
     }
 
+    static Response getResponseForType(MessageType type) {
+        switch (type) {
+            case ACK:
+                return new ACK();
+            default:
+                throw new IllegalArgumentException("Unknown type " + type);
+        }
+    }
+
     static Request getRequestForType(MessageType type) {
         switch (type) {
             case GET:
@@ -73,14 +82,18 @@ abstract class Message implements Persistable {
     private final static AtomicInteger messageIdGenerator = new AtomicInteger(Integer.MIN_VALUE);
 
     final MessageType type;
-    private int messageId;
+    int messageId;
     // this field has two semantics
     // 1. in a request it is the sender
     // 2. in a response it's the receiver
     short sender;
 
-    private Message(MessageType type, Message inResponseTo) {
+    private Message(MessageType type, Request inResponseTo) {
         this(type, inResponseTo.messageId, inResponseTo.sender);
+    }
+
+    private Message(MessageType type) {
+        this.type = type;
     }
 
     private Message(MessageType type, int messageId, short sender) {
@@ -104,8 +117,27 @@ abstract class Message implements Persistable {
 
     int calcByteSize() {
         return 1     // message type byte
+             + 4     // message id int
              + 2     // sender short
                ;
+    }
+
+    @Override
+    public void write(DataOutput out) throws IOException {
+        out.writeByte(type.ordinal);
+        out.writeInt(messageId);
+        out.writeShort(sender);
+    }
+
+    @Override
+    public void read(DataInput in) throws IOException {
+        messageId = in.readInt();
+        sender = in.readShort();
+    }
+
+    @Override
+    public String toString() {
+        return "message type: " + type + " messageId: " + messageId + " sender: " + sender;
     }
 
     static abstract class Request extends Message {
@@ -115,7 +147,11 @@ abstract class Message implements Persistable {
     }
 
     static abstract class Response extends Message {
-        private Response(MessageType type, Message inResponseTo) {
+        private Response(MessageType type) {
+            super(type);
+        }
+
+        private Response(MessageType type, Request inResponseTo) {
             super(type, inResponseTo);
         }
     }
@@ -150,21 +186,29 @@ abstract class Message implements Persistable {
 
         @Override
         public void write(DataOutput out) throws IOException {
-            out.writeByte(MessageType.GET.ordinal);
-            out.writeShort(sender);
+            super.write(out);
             out.writeLong(lineId);
         }
 
         @Override
         public void read(DataInput in) throws IOException {
-            sender = in.readShort();
+            super.read(in);
             lineId = in.readLong();
+        }
+
+        @Override
+        public String toString() {
+            return super.toString() + " lineId: " + lineId;
         }
     }
 
     static class ACK extends Response {
-        ACK(Message inResponseTo) {
+        ACK(Request inResponseTo) {
             super(MessageType.ACK, inResponseTo);
+        }
+
+        ACK() {
+            super(MessageType.ACK);
         }
 
         @Override
@@ -174,13 +218,12 @@ abstract class Message implements Persistable {
 
         @Override
         public void write(DataOutput out) throws IOException {
-            out.writeByte(MessageType.ACK.ordinal);
-            out.writeShort(sender);
+            super.write(out);
         }
 
         @Override
         public void read(DataInput in) throws IOException {
-            sender = in.readShort();
+            super.read(in);
         }
     }
 
