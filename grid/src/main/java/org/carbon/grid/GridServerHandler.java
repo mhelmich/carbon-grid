@@ -43,7 +43,7 @@ class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
             request.read(in);
         }
 
-        logger.info("Received message type: {} messageId {}", requestMessageType, request.messageId);
+        logger.info("received message type: {} messageId {}", requestMessageType, request.messageId);
         Message.Response response = cache.handleRequest(request);
 
         ByteBuf outBites = ctx.alloc().buffer(request.calcByteSize());

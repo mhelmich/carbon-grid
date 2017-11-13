@@ -42,9 +42,8 @@ class GridCommunications implements Closeable {
     }
 
     Future<Void> send(Message msg) throws IOException {
-        // TODO -- factor this into a connection pool
-        UdpGridClient client = nodeRegistry.getClientForNode(msg.sender);
-        return client.send(msg);
+        PeerNode peer = nodeRegistry.getPeerForNodeId(msg.sender);
+        return peer.send(msg);
     }
 
     @Override

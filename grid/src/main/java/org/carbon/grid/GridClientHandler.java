@@ -24,12 +24,16 @@ import io.netty.channel.socket.DatagramPacket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.function.Consumer;
+
 class GridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     private final static Logger logger = LoggerFactory.getLogger(GridClientHandler.class);
     private final Cache cache;
+    private final Consumer<Integer> peerNodeCallback;
 
-    GridClientHandler(Cache cache) {
+    GridClientHandler(Cache cache, Consumer<Integer> peerNodeCallback) {
         this.cache = cache;
+        this.peerNodeCallback = peerNodeCallback;
     }
 
     @Override
@@ -44,5 +48,6 @@ class GridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
 
         logger.info("Received message type: {} messageId {}", messageType, response.messageId);
         cache.handleResponse(response);
+        peerNodeCallback.accept(response.messageId);
     }
 }

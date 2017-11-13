@@ -17,16 +17,13 @@
 package org.carbon.grid;
 
 import io.netty.channel.EventLoopGroup;
-import io.netty.util.internal.SocketUtils;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
 
 class NodeRegistry implements Closeable {
-    private final ConcurrentHashMap<Short, InetSocketAddress> nodeIdToAddress = new ConcurrentHashMap<>(16, .75f, 2);
-    private final ConcurrentHashMap<Short, UdpGridClient> nodeIdToClient = new ConcurrentHashMap<>(128, .75f, 32);
+    private final ConcurrentHashMap<Short, PeerNode> nodeIdToPeer = new ConcurrentHashMap<>(128, .75f, 2);
 
     private final EventLoopGroup workerGroup;
     private final Cache cache;
@@ -37,22 +34,17 @@ class NodeRegistry implements Closeable {
     }
 
     void addPeer(short nodeId, String host, int port) {
-        nodeIdToAddress.put(nodeId, SocketUtils.socketAddress(host, port));
+        nodeIdToPeer.putIfAbsent(nodeId, new PeerNode(nodeId, host, port, workerGroup, cache));
     }
 
-    private InetSocketAddress lookup(short nodeId) {
-        return nodeIdToAddress.get(nodeId);
-    }
-
-    UdpGridClient getClientForNode(short nodeId) {
-        nodeIdToClient.putIfAbsent(nodeId, new UdpGridClient(lookup(nodeId), workerGroup, cache));
-        return nodeIdToClient.get(nodeId);
+    PeerNode getPeerForNodeId(short nodeId) {
+        return nodeIdToPeer.get(nodeId);
     }
 
     @Override
     public void close() throws IOException {
-        for (UdpGridClient client : nodeIdToClient.values()) {
-            client.close();
+        for (PeerNode peer : nodeIdToPeer.values()) {
+            peer.close();
         }
     }
 }

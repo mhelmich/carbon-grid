@@ -30,26 +30,27 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
+import java.util.function.Consumer;
 
 class UdpGridClient implements Closeable {
     private final ChannelFuture channelFuture;
     private final InetSocketAddress addr;
 
-    UdpGridClient(InetSocketAddress addr, EventLoopGroup workerGroup, Cache cache) {
+    UdpGridClient(InetSocketAddress addr, EventLoopGroup workerGroup, Cache cache, Consumer<Integer> peerNodeCallback) {
         Bootstrap b = new Bootstrap();
         b.group(workerGroup)
                 .channel(NioDatagramChannel.class)
                 .option(ChannelOption.SO_BROADCAST, true)
-                .handler(new GridClientHandler(cache));
+                .handler(new GridClientHandler(cache, peerNodeCallback));
         this.channelFuture = b.bind(0);
         this.addr = addr;
     }
 
-    Future<Void> send(Message request) throws IOException {
+    Future<Void> send(Message msg) throws IOException {
         Channel ch = channelFuture.syncUninterruptibly().channel();
-        ByteBuf bites = ch.alloc().buffer(request.calcByteSize());
+        ByteBuf bites = ch.alloc().buffer(msg.calcByteSize());
         try (ByteBufOutputStream out = new ByteBufOutputStream(bites)) {
-            request.write(out);
+            msg.write(out);
         }
 
         return ch.writeAndFlush(new DatagramPacket(bites, addr));
