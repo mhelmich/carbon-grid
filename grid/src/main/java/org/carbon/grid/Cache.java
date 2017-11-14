@@ -18,15 +18,16 @@ package org.carbon.grid;
 
 import io.netty.buffer.ByteBuf;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 
 public interface Cache {
-    long allocateEmpty();
-    long allocateWithData(ByteBuf buffer);
-    long allocateWithData(ByteBuffer buffer);
-    long allocateWithData(byte[] bytes);
-    ByteBuf get(long lineId);
-    ByteBuffer getBB(long lineId);
-    ByteBuf getx(long lineId);
-    ByteBuffer getxBB(long lineId);
+    long allocateEmpty() throws IOException;
+    long allocateWithData(ByteBuf buffer) throws IOException;
+    long allocateWithData(ByteBuffer buffer) throws IOException;
+    long allocateWithData(byte[] bytes) throws IOException;
+    ByteBuf get(long lineId) throws IOException;
+    ByteBuffer getBB(long lineId) throws IOException;
+    ByteBuf getx(long lineId) throws IOException;
+    ByteBuffer getxBB(long lineId) throws IOException;
 }

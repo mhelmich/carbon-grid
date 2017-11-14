@@ -23,6 +23,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.concurrent.Future;
 
 class GridCommunications implements Closeable {
@@ -54,6 +56,15 @@ class GridCommunications implements Closeable {
     Future<Void> send(Message msg) throws IOException {
         PeerNode peer = nodeRegistry.getPeerForNodeId(msg.sender);
         return peer.send(msg);
+    }
+
+    Future<Void> broadcast(Message msg) throws IOException {
+        List<Future<Void>> futures = new LinkedList<>();
+        for (PeerNode pn : nodeRegistry.getAllPeers()) {
+            futures.add(pn.send(msg));
+        }
+
+        return new CompositeFuture(futures);
     }
 
     @Override

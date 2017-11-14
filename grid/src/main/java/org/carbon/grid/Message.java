@@ -66,6 +66,8 @@ abstract class Message implements Persistable {
         switch (type) {
             case ACK:
                 return new ACK();
+            case PUT:
+                return new PUT();
             default:
                 throw new IllegalArgumentException("Unknown type " + type);
         }
@@ -198,6 +200,11 @@ abstract class Message implements Persistable {
         long lineId;
         int version;
         ByteBuf data;
+
+        PUT() {
+            super(MessageType.PUT);
+        }
+
         PUT(Request inResponseTo, long lineId, int version, ByteBuf data) {
             super(MessageType.PUT, inResponseTo);
             this.lineId = lineId;

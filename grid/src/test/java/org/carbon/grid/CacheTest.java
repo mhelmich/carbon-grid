@@ -16,9 +16,11 @@
 
 package org.carbon.grid;
 
+import io.netty.buffer.ByteBuf;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
@@ -47,17 +49,40 @@ public class CacheTest {
     @Test
     public void testGetPutCache() throws IOException {
         ThreeCaches threeCaches = createCluster();
+        String testData = "testing_test";
         try {
+            long newBlockId = threeCaches.cache1.allocateWithData(testData.getBytes());
+            ByteBuf localBB = threeCaches.cache1.get(newBlockId);
+            assertEquals(testData.getBytes(), localBB);
 
+            ByteBuf remoteBB = threeCaches.cache2.get(newBlockId);
+            assertEquals(testData.getBytes(), remoteBB);
         } finally {
             closeThreeCaches(threeCaches);
         }
     }
 
+    private byte[] getAllBytesFromBuffer(ByteBuf buffer) {
+        byte[] bites = new byte[buffer.readableBytes()];
+        buffer.readBytes(bites, 0, bites.length);
+        return bites;
+    }
+
+    void assertEquals(byte[] bites, ByteBuf buffer) {
+        byte[] bufferBites = getAllBytesFromBuffer(buffer);
+        assertTrue(Arrays.equals(bites, bufferBites));
+    }
+
     private void closeThreeCaches(ThreeCaches threeCaches) throws IOException {
-        threeCaches.cache1.close();
-        threeCaches.cache2.close();
-        threeCaches.cache3.close();
+        try {
+            threeCaches.cache1.close();
+        } finally {
+            try {
+                threeCaches.cache2.close();
+            } finally {
+                threeCaches.cache3.close();
+            }
+        }
     }
 
     private ThreeCaches createCluster() {

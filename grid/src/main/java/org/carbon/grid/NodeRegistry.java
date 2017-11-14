@@ -20,6 +20,7 @@ import io.netty.channel.EventLoopGroup;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 
 class NodeRegistry implements Closeable {
@@ -39,6 +40,10 @@ class NodeRegistry implements Closeable {
 
     PeerNode getPeerForNodeId(short nodeId) {
         return nodeIdToPeer.get(nodeId);
+    }
+
+    Collection<PeerNode> getAllPeers() {
+        return nodeIdToPeer.values();
     }
 
     @Override

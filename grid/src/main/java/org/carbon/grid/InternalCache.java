@@ -18,5 +18,9 @@ package org.carbon.grid;
 
 interface InternalCache extends Cache {
     void handleResponse(Message.Response response);
+
+    /**
+     * When null is returned nothing will be sent in response!
+     */
     Message.Response handleRequest(Message.Request request);
 }

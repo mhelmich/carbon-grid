@@ -28,6 +28,8 @@ import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 class InternalCacheImpl implements InternalCache, Closeable {
     private final static Logger logger = LoggerFactory.getLogger(InternalCacheImpl.class);
@@ -99,7 +101,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     @Override
-    public long allocateEmpty() {
+    public long allocateEmpty() throws IOException {
         long newLineId = nextClusterUniqueCacheLineId();
         CacheLine line = new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, null);
         line.setState(CacheLineState.OWNED);
@@ -108,20 +110,23 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     @Override
-    public long allocateWithData(ByteBuf buffer) {
+    public long allocateWithData(ByteBuf buffer) throws IOException {
         CacheLine line = wrap(buffer);
         owned.put(line.getId(), line);
         return line.getId();
     }
 
     @Override
-    public long allocateWithData(ByteBuffer buffer) {
+    public long allocateWithData(ByteBuffer buffer) throws IOException {
         return allocateWithData(Unpooled.wrappedBuffer(buffer));
     }
 
     @Override
-    public long allocateWithData(byte[] bytes) {
-        return allocateWithData(Unpooled.wrappedBuffer(bytes));
+    public long allocateWithData(byte[] bytes) throws IOException {
+        ByteBuf buffer = Unpooled
+                .directBuffer(bytes.length)
+                .writeBytes(bytes);
+        return allocateWithData(buffer);
     }
 
     private CacheLine wrap(ByteBuf bytebuf) {
@@ -132,7 +137,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     @Override
-    public ByteBuf get(long lineId) {
+    public ByteBuf get(long lineId) throws IOException {
         CacheLine line = getLineLocally(lineId);
         if (line == null) {
             CacheLine remoteLine = getLineRemotely(lineId);
@@ -147,22 +152,29 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     @Override
-    public ByteBuffer getBB(long lineId) {
+    public ByteBuffer getBB(long lineId) throws IOException {
         return get(lineId).nioBuffer();
     }
 
     @Override
-    public ByteBuf getx(long lineId) {
+    public ByteBuf getx(long lineId) throws IOException {
         return null;
     }
 
     @Override
-    public ByteBuffer getxBB(long lineId) {
+    public ByteBuffer getxBB(long lineId) throws IOException {
         return getx(lineId).nioBuffer();
     }
 
-    private CacheLine getLineRemotely(long lineId) {
-        return null;
+    private CacheLine getLineRemotely(long lineId) throws IOException {
+        Message.GET get = new Message.GET(comms.myNodeId, lineId);
+        Future<Void> f = comms.broadcast(get);
+        try {
+            f.get();
+        } catch (InterruptedException | ExecutionException xcp) {
+            throw new IOException(xcp);
+        }
+        return getLineLocally(lineId);
     }
 
     private CacheLine getLineLocally(long lineId) {

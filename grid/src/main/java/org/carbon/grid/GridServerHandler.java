@@ -50,13 +50,15 @@ class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
             logger.info("received message type: {} messageId {}", requestMessageType, request.messageId);
             Message.Response response = internalCache.handleRequest(request);
 
-            ByteBuf outBites = ctx.alloc().buffer(response.calcByteSize());
-            try (MessageOutput out = new MessageOutput(outBites)) {
-                response.write(out);
-            }
+            if (response != null) {
+                ByteBuf outBites = ctx.alloc().buffer(response.calcByteSize());
+                try (MessageOutput out = new MessageOutput(outBites)) {
+                    response.write(out);
+                }
 
-            ctx.writeAndFlush(new DatagramPacket(outBites, packet.sender()));
-            nodeToLastAckedMessageId.put(request.sender, request.messageId);
+                ctx.writeAndFlush(new DatagramPacket(outBites, packet.sender()));
+                nodeToLastAckedMessageId.put(request.sender, request.messageId);
+            }
         } else {
             // drop and resend last acked messageId + 1
             requestResend(ctx, nodeToLastAckedMessageId.get(request.sender) + 1, packet.sender());
