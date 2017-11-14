@@ -16,12 +16,10 @@
 
 package org.carbon.grid;
 
-import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
 
 public interface Persistable {
     int byteSize();
-    void write(DataOutput out) throws IOException;
-    void read(DataInput in) throws IOException;
+    void write(MessageOutput out) throws IOException;
+    void read(MessageInput in) throws IOException;
 }

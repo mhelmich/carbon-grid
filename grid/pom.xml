@@ -24,7 +24,7 @@
     </parent>
     <artifactId>grid</artifactId>
     <packaging>jar</packaging>
-    <name>-grid</name>
+    <name>grid</name>
 
     <dependencies>
         <dependency>

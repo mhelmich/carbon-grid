@@ -18,56 +18,25 @@ package org.carbon.grid;
 
 import io.netty.channel.EventLoopGroup;
 import io.netty.util.internal.SocketUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 
 class PeerNode implements Closeable {
-    private final static Logger logger = LoggerFactory.getLogger(PeerNode.class);
-
-    private final ConcurrentHashMap<Integer, CountDownLatchFuture> messageIdToLatch = new ConcurrentHashMap<>(128, .75f, 64);
-    private final LinkedBlockingQueue<Message> messageBackLog = new LinkedBlockingQueue<>();
     private final short nodeId;
     private final InetSocketAddress peerAddr;
-    private final UdpGridClient client;
-    private CountDownLatchFuture lastFutureToWaitFor;
+    private final OrderPreservingUdpGridClient client;
 
     PeerNode(short nodeId, String host, int port, EventLoopGroup workerGroup, Cache cache) {
         this.nodeId = nodeId;
         this.peerAddr = SocketUtils.socketAddress(host, port);
-        this.client = new UdpGridClient(peerAddr, workerGroup, cache, this::clientCallback);
+        this.client = new OrderPreservingUdpGridClient(peerAddr, workerGroup, cache);
     }
 
     Future<Void> send(Message msg) throws IOException {
-        if (!messageBackLog.isEmpty()) {
-            synchronized (messageBackLog) {
-                if (!messageBackLog.isEmpty()) {
-                    try {
-                        messageBackLog.offer(msg, 5, TimeUnit.SECONDS);
-                    } catch (InterruptedException xcp) {
-                        throw new IOException(xcp);
-                    }
-                }
-            }
-        }
-
-        CountDownLatchFuture latch = new CountDownLatchFuture();
-        client.send(msg);
-        messageIdToLatch.put(msg.messageId, latch);
-        lastFutureToWaitFor = latch;
-        return latch;
-    }
-
-    private void clientCallback(Integer messageId) {
-        CountDownLatchFuture f = messageIdToLatch.remove(messageId);
-        f.countDown();
+        return client.send(msg);
     }
 
     @Override

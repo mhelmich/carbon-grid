@@ -17,7 +17,6 @@
 package org.carbon.grid;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufInputStream;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.DatagramPacket;
@@ -29,11 +28,13 @@ import java.util.function.Consumer;
 class GridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     private final static Logger logger = LoggerFactory.getLogger(GridClientHandler.class);
     private final Cache cache;
-    private final Consumer<Integer> peerNodeCallback;
+    private final Consumer<Integer> messageAckCallback;
+    private final Consumer<Integer> messageResendCallback;
 
-    GridClientHandler(Cache cache, Consumer<Integer> peerNodeCallback) {
+    GridClientHandler(Cache cache, Consumer<Integer> messageAckCallback, Consumer<Integer> messageResendCallback) {
         this.cache = cache;
-        this.peerNodeCallback = peerNodeCallback;
+        this.messageAckCallback = messageAckCallback;
+        this.messageResendCallback = messageResendCallback;
     }
 
     @Override
@@ -42,12 +43,16 @@ class GridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
         Message.MessageType messageType = Message.MessageType.fromByte(inBites.readByte());
         Message.Response response = Message.getResponseForType(messageType);
 
-        try (ByteBufInputStream in = new ByteBufInputStream(inBites)) {
+        try (MessageInput in = new MessageInput(inBites)) {
             response.read(in);
         }
 
         logger.info("Received message type: {} messageId {}", messageType, response.messageId);
         cache.handleResponse(response);
-        peerNodeCallback.accept(response.messageId);
+        if (Message.MessageType.RESEND.equals(response.type)) {
+            messageResendCallback.accept(response.messageId);
+        } else {
+            messageAckCallback.accept(response.messageId);
+        }
     }
 }

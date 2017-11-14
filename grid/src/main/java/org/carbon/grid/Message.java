@@ -16,14 +16,13 @@
 
 package org.carbon.grid;
 
-import java.io.DataInput;
-import java.io.DataOutput;
+import io.netty.buffer.ByteBuf;
+
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 
 abstract class Message implements Persistable {
 
@@ -37,7 +36,9 @@ abstract class Message implements Persistable {
         INVALIDATE((byte)3),
         INVALIDATE_ACK((byte)4),
         BACKUP((byte)5),
-        BACUP_ACK((byte)6);
+        BACUP_ACK((byte)6),
+        RESEND((byte)7),
+        ;
 
         private final static Map<Byte, MessageType> byteToType = new HashMap<>(MessageType.values().length);
         static {
@@ -79,8 +80,6 @@ abstract class Message implements Persistable {
         }
     }
 
-    private final static AtomicInteger messageIdGenerator = new AtomicInteger(Integer.MIN_VALUE);
-
     final MessageType type;
     int messageId;
     // this field has two semantics
@@ -96,18 +95,15 @@ abstract class Message implements Persistable {
         this.type = type;
     }
 
+    private Message(MessageType type, short sender) {
+        this.type = type;
+        this.sender = sender;
+    }
+
     private Message(MessageType type, int messageId, short sender) {
         this.type = type;
         this.messageId = messageId;
         this.sender = sender;
-    }
-
-    private static int newMessageId() {
-        int messageId = messageIdGenerator.incrementAndGet();
-        if (messageId == Integer.MAX_VALUE) {
-            messageIdGenerator.set(Integer.MIN_VALUE);
-        }
-        return messageId;
     }
 
     @Override
@@ -123,14 +119,14 @@ abstract class Message implements Persistable {
     }
 
     @Override
-    public void write(DataOutput out) throws IOException {
+    public void write(MessageOutput out) throws IOException {
         out.writeByte(type.ordinal);
         out.writeInt(messageId);
         out.writeShort(sender);
     }
 
     @Override
-    public void read(DataInput in) throws IOException {
+    public void read(MessageInput in) throws IOException {
         messageId = in.readInt();
         sender = in.readShort();
     }
@@ -141,8 +137,8 @@ abstract class Message implements Persistable {
     }
 
     static abstract class Request extends Message {
-        private Request(MessageType type, int messageId, short node) {
-            super(type, messageId, node);
+        private Request(MessageType type, short node) {
+            super(type, node);
         }
     }
 
@@ -164,7 +160,7 @@ abstract class Message implements Persistable {
         }
 
         GET(short node, long lineId) {
-            super(MessageType.GET, Message.newMessageId(), node);
+            super(MessageType.GET, node);
             this.lineId = lineId;
         }
 
@@ -185,13 +181,13 @@ abstract class Message implements Persistable {
         }
 
         @Override
-        public void write(DataOutput out) throws IOException {
+        public void write(MessageOutput out) throws IOException {
             super.write(out);
             out.writeLong(lineId);
         }
 
         @Override
-        public void read(DataInput in) throws IOException {
+        public void read(MessageInput in) throws IOException {
             super.read(in);
             lineId = in.readLong();
         }
@@ -199,6 +195,31 @@ abstract class Message implements Persistable {
         @Override
         public String toString() {
             return super.toString() + " lineId: " + lineId;
+        }
+    }
+
+    static class PUT extends Response {
+        ByteBuf content;
+        PUT(Request inResponseTo) {
+            super(MessageType.PUT, inResponseTo);
+        }
+
+        @Override
+        int calcByteSize() {
+            return super.calcByteSize()
+                    + content.capacity();  // buffer content
+        }
+
+        @Override
+        public void write(MessageOutput out) throws IOException {
+            super.write(out);
+            out.writeByteBuf(content);
+        }
+
+        @Override
+        public void read(MessageInput in) throws IOException {
+            super.read(in);
+            content = in.readByteBuf();
         }
     }
 
@@ -217,12 +238,12 @@ abstract class Message implements Persistable {
         }
 
         @Override
-        public void write(DataOutput out) throws IOException {
+        public void write(MessageOutput out) throws IOException {
             super.write(out);
         }
 
         @Override
-        public void read(DataInput in) throws IOException {
+        public void read(MessageInput in) throws IOException {
             super.read(in);
         }
     }
