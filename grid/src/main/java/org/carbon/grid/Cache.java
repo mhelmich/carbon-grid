@@ -21,6 +21,9 @@ import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+/**
+ * The interface to the in-memory cache.
+ */
 public interface Cache {
     long allocateEmpty() throws IOException;
     long allocateWithData(ByteBuf buffer) throws IOException;

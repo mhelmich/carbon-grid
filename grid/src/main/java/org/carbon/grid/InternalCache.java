@@ -16,10 +16,18 @@
 
 package org.carbon.grid;
 
+/**
+ * This interface mostly defines handler and dispatcher methods.
+ */
 interface InternalCache extends Cache {
+    /**
+     * This method is being called by all messages that are received by a client.
+     */
     void handleResponse(Message.Response response);
 
     /**
+     * This method is called for any incoming message (aka each message that is received by the server handler).
+     * The request is taken off the wire, deserialized into a POJO, and passed to this method.
      * When null is returned nothing will be sent in response!
      */
     Message.Response handleRequest(Message.Request request);

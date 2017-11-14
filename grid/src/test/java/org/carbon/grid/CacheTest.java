@@ -24,6 +24,9 @@ import java.util.Arrays;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class CacheTest {
@@ -53,12 +56,30 @@ public class CacheTest {
         try {
             long newBlockId = threeCaches.cache1.allocateWithData(testData.getBytes());
             ByteBuf localBB = threeCaches.cache1.get(newBlockId);
-            assertEquals(testData.getBytes(), localBB);
+            assertEqualsBites(testData.getBytes(), localBB);
 
             ByteBuf remoteBB = threeCaches.cache2.get(newBlockId);
-            assertEquals(testData.getBytes(), remoteBB);
+            assertEqualsBites(testData.getBytes(), remoteBB);
         } finally {
             closeThreeCaches(threeCaches);
+        }
+    }
+
+    @Test
+    public void testAbsentLine() throws IOException {
+        try (InternalCacheImpl cache = new InternalCacheImpl(123, 5555)) {
+            ByteBuf buffer = cache.get(123);
+            assertNull(buffer);
+        }
+    }
+
+    @Test
+    public void testAllocateEmpty() throws IOException {
+        try (InternalCacheImpl cache = new InternalCacheImpl(123, 5555)) {
+            long emptyBlock = cache.allocateEmpty();
+            ByteBuf buffer = cache.get(emptyBlock);
+            assertNotNull(buffer);
+            assertEquals(0, buffer.readableBytes());
         }
     }
 
@@ -68,7 +89,7 @@ public class CacheTest {
         return bites;
     }
 
-    void assertEquals(byte[] bites, ByteBuf buffer) {
+    void assertEqualsBites(byte[] bites, ByteBuf buffer) {
         byte[] bufferBites = getAllBytesFromBuffer(buffer);
         assertTrue(Arrays.equals(bites, bufferBites));
     }

@@ -74,7 +74,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
         CacheLine line = owned.get(get.lineId);
         if (line != null) {
             line.addSharer(get.sender);
-            return new Message.PUT(get, get.lineId, line.getVersion(), line.getData());
+            return new Message.PUT(get, get.lineId, line.getVersion(), line.resetReaderAndGetData());
         } else {
             return new Message.ACK(get);
         }
@@ -144,10 +144,10 @@ class InternalCacheImpl implements InternalCache, Closeable {
             if (remoteLine == null) {
                 return null;
             } else {
-                return remoteLine.getData();
+                return remoteLine.resetReaderAndGetData();
             }
         } else {
-            return line.getData();
+            return line.resetReaderAndGetData();
         }
     }
 
@@ -168,6 +168,8 @@ class InternalCacheImpl implements InternalCache, Closeable {
 
     private CacheLine getLineRemotely(long lineId) throws IOException {
         Message.GET get = new Message.GET(comms.myNodeId, lineId);
+        // TODO -- make it so that broadcasts only wait for the minimum number of relevant messages
+        // as opposed to for all outstanding messages regardless of whether they are relevant or not
         Future<Void> f = comms.broadcast(get);
         try {
             f.get();

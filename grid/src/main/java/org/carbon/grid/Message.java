@@ -225,7 +225,7 @@ abstract class Message implements Persistable {
             super.write(out);
             out.writeLong(lineId);
             out.writeInt(version);
-            out.writeByteBuf(data);
+            out.writeByteBuf(data.resetReaderIndex());
         }
 
         @Override

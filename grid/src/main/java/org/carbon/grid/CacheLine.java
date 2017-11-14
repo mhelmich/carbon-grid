@@ -72,8 +72,8 @@ class CacheLine {
         return flags;
     }
 
-    ByteBuf getData() {
-        return data;
+    ByteBuf resetReaderAndGetData() {
+        return data.resetReaderIndex();
     }
 
     void addSharer(short newSharer) {

@@ -77,6 +77,7 @@ class OrderPreservingUdpGridClient implements Closeable {
         if (lAndM == null) {
             logger.info("received message with id {} twice. Discarding...", messageId);
         } else {
+            logger.info("counting down latch for message id: {}", messageId);
             lAndM.latch.countDown();
         }
 
