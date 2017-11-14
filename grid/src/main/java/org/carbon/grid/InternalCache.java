@@ -16,17 +16,7 @@
 
 package org.carbon.grid;
 
-import io.netty.buffer.ByteBuf;
-
-import java.nio.ByteBuffer;
-
-public interface Cache {
-    long allocateEmpty();
-    long allocateWithData(ByteBuf buffer);
-    long allocateWithData(ByteBuffer buffer);
-    long allocateWithData(byte[] bytes);
-    ByteBuf get(long lineId);
-    ByteBuffer getBB(long lineId);
-    ByteBuf getx(long lineId);
-    ByteBuffer getxBB(long lineId);
+interface InternalCache extends Cache {
+    void handleResponse(Message.Response response);
+    Message.Response handleRequest(Message.Request request);
 }

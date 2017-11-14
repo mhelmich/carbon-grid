@@ -153,7 +153,7 @@ abstract class Message implements Persistable {
     }
 
     static class GET extends Request {
-        private long lineId;
+        long lineId;
 
         GET() {
             this(-1, -1);
@@ -168,10 +168,6 @@ abstract class Message implements Persistable {
         // I got tired of the constant casting
         GET(int node, int lineId) {
             this((short)node, (long)lineId);
-        }
-
-        long getLineId() {
-            return lineId;
         }
 
         @Override
@@ -199,27 +195,38 @@ abstract class Message implements Persistable {
     }
 
     static class PUT extends Response {
-        ByteBuf content;
-        PUT(Request inResponseTo) {
+        long lineId;
+        int version;
+        ByteBuf data;
+        PUT(Request inResponseTo, long lineId, int version, ByteBuf data) {
             super(MessageType.PUT, inResponseTo);
+            this.lineId = lineId;
+            this.version = version;
+            this.data = data;
         }
 
         @Override
         int calcByteSize() {
             return super.calcByteSize()
-                    + content.capacity();  // buffer content
+                    + 8                 // line id long
+                    + 4                 // version number int
+                    + data.capacity();  // buffer content
         }
 
         @Override
         public void write(MessageOutput out) throws IOException {
             super.write(out);
-            out.writeByteBuf(content);
+            out.writeLong(lineId);
+            out.writeInt(version);
+            out.writeByteBuf(data);
         }
 
         @Override
         public void read(MessageInput in) throws IOException {
             super.read(in);
-            content = in.readByteBuf();
+            lineId = in.readLong();
+            version = in.readInt();
+            data = in.readByteBuf();
         }
     }
 

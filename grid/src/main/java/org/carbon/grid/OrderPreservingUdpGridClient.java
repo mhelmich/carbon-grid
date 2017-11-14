@@ -44,12 +44,12 @@ class OrderPreservingUdpGridClient implements Closeable {
     private final AtomicInteger lastAckedMessage = new AtomicInteger(Integer.MAX_VALUE);
     private final AtomicInteger messageIdGenerator = new AtomicInteger(Integer.MIN_VALUE);
 
-    OrderPreservingUdpGridClient(InetSocketAddress addr, EventLoopGroup workerGroup, Cache cache) {
+    OrderPreservingUdpGridClient(InetSocketAddress addr, EventLoopGroup workerGroup, InternalCache internalCache) {
         Bootstrap b = new Bootstrap();
         b.group(workerGroup)
                 .channel(NioDatagramChannel.class)
                 .option(ChannelOption.SO_BROADCAST, true)
-                .handler(new GridClientHandler(cache, this::ackResponseCallback, this::resendCallBack));
+                .handler(new GridClientHandler(internalCache, this::ackResponseCallback, this::resendCallBack));
         this.channelFuture = b.bind(0);
         this.addr = addr;
     }

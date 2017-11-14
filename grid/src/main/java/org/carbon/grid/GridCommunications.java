@@ -30,10 +30,20 @@ class GridCommunications implements Closeable {
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
     private final NodeRegistry nodeRegistry;
     private final UdpGridServer udpGridServer;
+    final short myNodeId;
+    final int myServerPort;
+    final InternalCache myInternalCache;
 
-    GridCommunications(int port, Cache cache) {
-        this.udpGridServer = new UdpGridServer(port, workerGroup, cache);
-        this.nodeRegistry = new NodeRegistry(workerGroup, cache);
+    GridCommunications(int myNodeId, int port, InternalCache internalCache) {
+        this((short)myNodeId, port, internalCache);
+    }
+
+    private GridCommunications(short myNodeId, int port, InternalCache internalCache) {
+        this.myNodeId = myNodeId;
+        this.myServerPort = port;
+        this.myInternalCache = internalCache;
+        this.udpGridServer = new UdpGridServer(port, workerGroup, internalCache);
+        this.nodeRegistry = new NodeRegistry(workerGroup, internalCache);
     }
 
     void addPeer(short nodeId, String host, int port) {

@@ -16,15 +16,84 @@
 
 package org.carbon.grid;
 
-import java.nio.ByteBuffer;
+import io.netty.buffer.ByteBuf;
+import org.cliffc.high_scale_lib.NonBlockingSetInt;
+
 import java.util.Set;
 
 class CacheLine {
-    private long id;
+    private final long id;
     private volatile CacheLineState state;
-    private volatile long version;
+    private volatile int version;
     private short owner = -1;
-    private Set<Short> sharers;
+    private NonBlockingSetInt sharers;
     private byte flags;
-    private ByteBuffer data;
+    private final ByteBuf data;
+
+    CacheLine(long id, int version, short owner, ByteBuf data) {
+        this.id = id;
+        this.version = version;
+        this.owner = owner;
+        this.data = data;
+    }
+
+    long getId() {
+        return id;
+    }
+
+    void setState(CacheLineState state) {
+        version++;
+        this.state = state;
+    }
+
+    CacheLineState getState() {
+        return state;
+    }
+
+    void setOwner(short owner) {
+        version++;
+        this.owner = owner;
+    }
+
+    short getOwner() {
+        return owner;
+    }
+
+    int getVersion() {
+        return version;
+    }
+
+    void setFlags(byte flags) {
+        version++;
+        this.flags = flags;
+    }
+
+    byte getFlags() {
+        return flags;
+    }
+
+    ByteBuf getData() {
+        return data;
+    }
+
+    void addSharer(short newSharer) {
+        if (sharers == null) {
+            synchronized (this) {
+                if (sharers == null) {
+                    sharers = new NonBlockingSetInt();
+                }
+            }
+        }
+
+        sharers.add(newSharer);
+    }
+
+    Set<Integer> getSharers() {
+        return sharers;
+    }
+
+    @Override
+    public String toString() {
+        return "id: " + id + " state: " + state + " owner: " + owner + " data size: " + data.capacity();
+    }
 }

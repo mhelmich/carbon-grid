@@ -26,15 +26,15 @@ class NodeRegistry implements Closeable {
     private final ConcurrentHashMap<Short, PeerNode> nodeIdToPeer = new ConcurrentHashMap<>(128, .75f, 2);
 
     private final EventLoopGroup workerGroup;
-    private final Cache cache;
+    private final InternalCache internalCache;
 
-    NodeRegistry(EventLoopGroup workerGroup, Cache cache) {
+    NodeRegistry(EventLoopGroup workerGroup, InternalCache internalCache) {
         this.workerGroup = workerGroup;
-        this.cache = cache;
+        this.internalCache = internalCache;
     }
 
     void addPeer(short nodeId, String host, int port) {
-        nodeIdToPeer.putIfAbsent(nodeId, new PeerNode(nodeId, host, port, workerGroup, cache));
+        nodeIdToPeer.putIfAbsent(nodeId, new PeerNode(nodeId, host, port, workerGroup, internalCache));
     }
 
     PeerNode getPeerForNodeId(short nodeId) {

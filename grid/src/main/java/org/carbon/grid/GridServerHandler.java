@@ -30,10 +30,10 @@ import java.util.concurrent.ConcurrentHashMap;
 class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     private final static Logger logger = LoggerFactory.getLogger(GridServerHandler.class);
     private final static ConcurrentHashMap<Short, Integer> nodeToLastAckedMessageId = new ConcurrentHashMap<>(128, .75f, 64);
-    private final Cache cache;
+    private final InternalCache internalCache;
 
-    GridServerHandler(Cache cache) {
-        this.cache = cache;
+    GridServerHandler(InternalCache internalCache) {
+        this.internalCache = internalCache;
     }
 
     @Override
@@ -48,7 +48,7 @@ class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
 
         if (shouldHandleMessage(request)) {
             logger.info("received message type: {} messageId {}", requestMessageType, request.messageId);
-            Message.Response response = cache.handleRequest(request);
+            Message.Response response = internalCache.handleRequest(request);
 
             ByteBuf outBites = ctx.alloc().buffer(response.calcByteSize());
             try (MessageOutput out = new MessageOutput(outBites)) {

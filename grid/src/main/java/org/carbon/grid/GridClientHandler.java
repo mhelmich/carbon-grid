@@ -27,12 +27,12 @@ import java.util.function.Consumer;
 
 class GridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     private final static Logger logger = LoggerFactory.getLogger(GridClientHandler.class);
-    private final Cache cache;
+    private final InternalCache internalCache;
     private final Consumer<Integer> messageAckCallback;
     private final Consumer<Integer> messageResendCallback;
 
-    GridClientHandler(Cache cache, Consumer<Integer> messageAckCallback, Consumer<Integer> messageResendCallback) {
-        this.cache = cache;
+    GridClientHandler(InternalCache internalCache, Consumer<Integer> messageAckCallback, Consumer<Integer> messageResendCallback) {
+        this.internalCache = internalCache;
         this.messageAckCallback = messageAckCallback;
         this.messageResendCallback = messageResendCallback;
     }
@@ -48,7 +48,7 @@ class GridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
         }
 
         logger.info("Received message type: {} messageId {}", messageType, response.messageId);
-        cache.handleResponse(response);
+        internalCache.handleResponse(response);
         if (Message.MessageType.RESEND.equals(response.type)) {
             messageResendCallback.accept(response.messageId);
         } else {

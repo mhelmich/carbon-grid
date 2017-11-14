@@ -29,10 +29,10 @@ class PeerNode implements Closeable {
     private final InetSocketAddress peerAddr;
     private final OrderPreservingUdpGridClient client;
 
-    PeerNode(short nodeId, String host, int port, EventLoopGroup workerGroup, Cache cache) {
+    PeerNode(short nodeId, String host, int port, EventLoopGroup workerGroup, InternalCache internalCache) {
         this.nodeId = nodeId;
         this.peerAddr = SocketUtils.socketAddress(host, port);
-        this.client = new OrderPreservingUdpGridClient(peerAddr, workerGroup, cache);
+        this.client = new OrderPreservingUdpGridClient(peerAddr, workerGroup, internalCache);
     }
 
     Future<Void> send(Message msg) throws IOException {

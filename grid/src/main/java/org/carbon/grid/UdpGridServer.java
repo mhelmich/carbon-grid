@@ -29,7 +29,7 @@ import java.io.IOException;
 class UdpGridServer implements Closeable {
     private final Channel channel;
 
-    UdpGridServer(int port, EventLoopGroup workerGroup, Cache cache) {
+    UdpGridServer(int port, EventLoopGroup workerGroup, InternalCache internalCache) {
         Bootstrap b = new Bootstrap();
         b.group(workerGroup)
                 .channel(NioDatagramChannel.class)
@@ -38,7 +38,7 @@ class UdpGridServer implements Closeable {
                     @Override
                     public void initChannel(final NioDatagramChannel ch) throws Exception {
                         ch.pipeline().addLast(
-                                new GridServerHandler(cache)
+                                new GridServerHandler(internalCache)
                         );
                     }
                 });
