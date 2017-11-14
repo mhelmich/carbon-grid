@@ -22,12 +22,14 @@ import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
 
-class InternalCacheImpl implements InternalCache {
+class InternalCacheImpl implements InternalCache, Closeable {
     private final static Logger logger = LoggerFactory.getLogger(InternalCacheImpl.class);
     private static Random random = new Random();
     private static Set<Long> usedIds = new HashSet<>();
@@ -119,17 +121,7 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public long allocateWithData(byte[] bytes) {
-        CacheLine line = wrap(bytes);
-        owned.put(line.getId(), line);
-        return line.getId();
-    }
-
-    private CacheLine wrap(byte[] bytes) {
-        return wrap(Unpooled.wrappedBuffer(bytes));
-    }
-
-    private CacheLine wrap(ByteBuffer buffer) {
-        return wrap(Unpooled.wrappedBuffer(buffer));
+        return allocateWithData(Unpooled.wrappedBuffer(bytes));
     }
 
     private CacheLine wrap(ByteBuf bytebuf) {
@@ -179,5 +171,10 @@ class InternalCacheImpl implements InternalCache {
             line = shared.get(lineId);
         }
         return line;
+    }
+
+    @Override
+    public void close() throws IOException {
+        comms.close();
     }
 }

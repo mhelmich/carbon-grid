@@ -31,20 +31,33 @@ public class CacheTest {
         short node2 = 456;
         int port1 = 4444;
         int port2 = 5555;
-        InternalCacheImpl internalCache1 = new InternalCacheImpl(node1, port1);
-        InternalCacheImpl internalCache2 = new InternalCacheImpl(node2, port2);
-        internalCache1.comms.addPeer(node2, "localhost", port2);
-        internalCache1.comms.addPeer(node1, "localhost", port1);
+        try (InternalCacheImpl internalCache1 = new InternalCacheImpl(node1, port1)) {
+            try (InternalCacheImpl internalCache2 = new InternalCacheImpl(node2, port2)) {
+                internalCache1.comms.addPeer(node2, "localhost", port2);
+                internalCache1.comms.addPeer(node1, "localhost", port1);
 
-        Message.GET get = new Message.GET(node2, 999L);
-        Future<Void> f1 = internalCache1.comms.send(get);
-        f1.get();
-        assertTrue(f1.isDone());
+                Message.GET get = new Message.GET(node2, 999L);
+                Future<Void> f1 = internalCache1.comms.send(get);
+                f1.get();
+                assertTrue(f1.isDone());
+            }
+        }
     }
 
     @Test
-    public void testGetPutCache() {
+    public void testGetPutCache() throws IOException {
         ThreeCaches threeCaches = createCluster();
+        try {
+
+        } finally {
+            closeThreeCaches(threeCaches);
+        }
+    }
+
+    private void closeThreeCaches(ThreeCaches threeCaches) throws IOException {
+        threeCaches.cache1.close();
+        threeCaches.cache2.close();
+        threeCaches.cache3.close();
     }
 
     private ThreeCaches createCluster() {
