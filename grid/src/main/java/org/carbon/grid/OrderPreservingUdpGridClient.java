@@ -49,20 +49,21 @@ class OrderPreservingUdpGridClient implements Closeable {
 
     OrderPreservingUdpGridClient(short theNodeITalkTo, InetSocketAddress addr, EventLoopGroup workerGroup, InternalCache internalCache) {
         this.theNodeITalkTo = theNodeITalkTo;
-        Bootstrap b = new Bootstrap();
-        b.group(workerGroup)
-                .channel(NioDatagramChannel.class)
-                .option(ChannelOption.SO_BROADCAST, true)
-                .handler(new GridClientHandler(internalCache, this::ackResponseCallback, this::resendCallBack));
+        Bootstrap b = createBootstrap(workerGroup, internalCache);
         this.channelFuture = b.bind(0);
         this.addr = addr;
     }
 
+    protected Bootstrap createBootstrap(EventLoopGroup workerGroup, InternalCache internalCache) {
+        return new Bootstrap().group(workerGroup)
+                .channel(NioDatagramChannel.class)
+                .option(ChannelOption.SO_BROADCAST, true)
+                .handler(new GridClientHandler(internalCache, this::ackResponseCallback, this::resendCallBack));
+    }
+
     CountDownLatchFuture send(Message msg) throws IOException {
-        msg.messageId = nextMessageId();
         CountDownLatchFuture latch = new CountDownLatchFuture();
-        messageIdToLatchAndMessage.put(msg.messageId, new LatchAndMessage(latch, msg));
-        messageIdsToSend.offer(msg.messageId);
+        queueUpMessage(msg, latch);
         processMsgQueue();
         return latch;
     }
@@ -74,7 +75,8 @@ class OrderPreservingUdpGridClient implements Closeable {
         return messageIdGenerator.incrementAndGet();
     }
 
-    private void ackResponseCallback(int messageId) {
+    // visible for testing
+    void ackResponseCallback(int messageId) {
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(messageId);
         lastAckedMessage.set(messageId);
 
@@ -94,7 +96,7 @@ class OrderPreservingUdpGridClient implements Closeable {
     }
 
     private void processMsgQueue() {
-        Integer msgIdToSend = messageIdsToSend.poll();
+        Integer msgIdToSend = nextMessageToSend();
         if (msgIdToSend != null) {
             LatchAndMessage lnm = messageIdToLatchAndMessage.get(msgIdToSend);
             if (lnm == null) throw new RuntimeException("Can't find msg id " + msgIdToSend + " in my records!");
@@ -106,7 +108,23 @@ class OrderPreservingUdpGridClient implements Closeable {
         }
     }
 
-    private ChannelFuture innerSend(Message msg) throws IOException {
+    private synchronized void queueUpMessage(Message msg, CountDownLatchFuture latch) {
+        msg.messageId = nextMessageId();
+        messageIdToLatchAndMessage.put(msg.messageId, new LatchAndMessage(latch, msg));
+        messageIdsToSend.offer(msg.messageId);
+    }
+
+    private synchronized Integer nextMessageToSend() {
+        Integer msgIdToSend = messageIdsToSend.peek();
+        return (previousMessageStillInFlight(msgIdToSend)) ? null : messageIdsToSend.poll();
+    }
+
+    private boolean previousMessageStillInFlight(int msgIdToSend) {
+        msgIdToSend--;
+        return lastAckedMessage.get() == msgIdToSend;
+    }
+
+    protected ChannelFuture innerSend(Message msg) throws IOException {
         Channel ch = channelFuture.syncUninterruptibly().channel();
         ByteBuf bites = ch.alloc().buffer(msg.calcByteSize());
         try (MessageOutput out = new MessageOutput(bites)) {

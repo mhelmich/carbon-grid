@@ -23,14 +23,13 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
 
 class UdpGridServer implements Closeable {
-    private final static Logger logger = LoggerFactory.getLogger(UdpGridServer.class);
+    // this is the server-wide map of the last message ids that have been acked by this server
+    // for each node in the cluster this map keeps track of what the next message id to expect is
     private final NonBlockingHashMap<Short, Integer> nodeIdToLastAckedMsgId = new NonBlockingHashMap<>();
     private final Channel channel;
 
