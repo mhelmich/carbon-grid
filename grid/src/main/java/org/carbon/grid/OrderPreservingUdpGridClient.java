@@ -35,6 +35,11 @@ import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * This client class is responsible for sending out UDP packets to one particular node in the cluster.
+ * It does preserve ordering of messages as in: Messages will be received by the other party in the order they are being sent.
+ * This class does so by implementing a simple stop-and-wait ARQ (see https://en.wikipedia.org/wiki/Sliding_window_protocol).
+ */
 class OrderPreservingUdpGridClient implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(OrderPreservingUdpGridClient.class);
 
@@ -58,6 +63,7 @@ class OrderPreservingUdpGridClient implements Closeable {
         this.addr = addr;
     }
 
+    // visible for testing
     protected Bootstrap createBootstrap(EventLoopGroup workerGroup, InternalCache internalCache) {
         return new Bootstrap().group(workerGroup)
                 .channel(NioDatagramChannel.class)
@@ -65,6 +71,14 @@ class OrderPreservingUdpGridClient implements Closeable {
                 .handler(new GridClientHandler(internalCache, this::ackResponseCallback, this::resendCallBack));
     }
 
+    /**
+     * This is virtually non-blocking.
+     * Technically it calls synchronized methods down below
+     * but the code is designed to asynchronously send the message
+     * or enqueue the message in a queue to be sent later.
+     * Therefore this method returns "right away" and takes care of the
+     * sending later.
+     */
     CountDownLatchFuture send(Message msg) throws IOException {
         CountDownLatchFuture latch = new CountDownLatchFuture();
         queueUpMessage(msg, latch);
@@ -75,17 +89,20 @@ class OrderPreservingUdpGridClient implements Closeable {
     // visible for testing
     void ackResponseCallback(int messageId) {
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(messageId);
+        // this is a little loose code
+        // if we ever move away from send-and-wait ARQ,
+        // we will have to deal with multiple threads competing
         lastAckedMessage.set(messageId);
 
         if (lAndM == null) {
             logger.info("received message with id {} twice. Discarding...", messageId);
         } else {
-            logger.info("counting down latch for message id: {}", messageId);
+            logger.info("releasing latch for message with id: {}", messageId);
             lAndM.latch.countDown();
         }
 
         msgInFlight.set(false);
-        // piggy back another send
+        // piggy back another send if possible
         processMsgQueue();
     }
 
@@ -93,6 +110,12 @@ class OrderPreservingUdpGridClient implements Closeable {
         logger.info("received resend message for id {}", messageIdFromWhereToResend);
     }
 
+    /**
+     * This methods triggers the sending process...
+     * It's called in two places -- when a consumer calls send and asynchronously when the client handler
+     * acknowledges an incoming message. At any point in time we may choose to not do anything as there
+     * is a message in-flight already.
+     */
     private void processMsgQueue() {
         Integer msgIdToSend = nextMessageToSend();
         if (msgIdToSend != null) {
@@ -106,10 +129,30 @@ class OrderPreservingUdpGridClient implements Closeable {
         }
     }
 
+    /////////////////////////////////////////////////
+    /////////////////////////////////////////////
+    /////////////////////////////////
+    // concurrency right now is dealt with by these
+    // two synchronized methods
+    // they make sure all our bookkeeping lines up
+    // you might argue that this implementation of
+    // concurrency control has optimization potential
+    // and I can't disagree but I deem this fine for now
+
     private synchronized void queueUpMessage(Message msg, CountDownLatchFuture latch) {
         msg.messageId = generateNextMessageId();
         messageIdToLatchAndMessage.put(msg.messageId, new LatchAndMessage(latch, msg));
         messageIdsToSend.offer(msg.messageId);
+    }
+
+    // nullable
+    private synchronized Integer nextMessageToSend() {
+        if (msgInFlight.get()) {
+            return null;
+        } else {
+            msgInFlight.set(true);
+            return messageIdsToSend.poll();
+        }
     }
 
     private int generateNextMessageId() {
@@ -122,15 +165,9 @@ class OrderPreservingUdpGridClient implements Closeable {
         return messageSequenceIdGenerator;
     }
 
-    private synchronized Integer nextMessageToSend() {
-        if (msgInFlight.get()) {
-            return null;
-        } else {
-            msgInFlight.set(true);
-            return messageIdsToSend.poll();
-        }
-    }
-
+    /**
+     * This method takes care of the actual serialization and sending of messages.
+     */
     protected ChannelFuture innerSend(Message msg) throws IOException {
         Channel ch = channelFuture.syncUninterruptibly().channel();
         ByteBuf bites = ch.alloc().buffer(msg.calcByteSize());
@@ -157,6 +194,11 @@ class OrderPreservingUdpGridClient implements Closeable {
         LatchAndMessage(CountDownLatchFuture latch, Message msg) {
             this.latch = latch;
             this.msg = msg;
+        }
+
+        @Override
+        public String toString() {
+            return "latch: " + latch + " msg: " + msg;
         }
     }
 }
