@@ -31,20 +31,25 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.LinkedList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 class OrderPreservingUdpGridClient implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(OrderPreservingUdpGridClient.class);
 
     private final NonBlockingHashMap<Integer, LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMap<>();
-    private final LinkedBlockingQueue<Integer> messageIdsToSend = new LinkedBlockingQueue<>();
     private final AtomicInteger lastAckedMessage = new AtomicInteger(Integer.MAX_VALUE);
+    private final AtomicBoolean msgInFlight = new AtomicBoolean(false);
+
+    // as long as these two members are only called inside synchronized blocks
+    // it's perfectly fine to use non-thread-safe data structures
+    private final LinkedList<Integer> messageIdsToSend = new LinkedList<>();
     private int messageSequenceIdGenerator = Integer.MIN_VALUE;
 
+    private final short theNodeITalkTo;
     private final ChannelFuture channelFuture;
     private final InetSocketAddress addr;
-    private final short theNodeITalkTo;
 
     OrderPreservingUdpGridClient(short theNodeITalkTo, InetSocketAddress addr, EventLoopGroup workerGroup, InternalCache internalCache) {
         this.theNodeITalkTo = theNodeITalkTo;
@@ -67,15 +72,6 @@ class OrderPreservingUdpGridClient implements Closeable {
         return latch;
     }
 
-    private int nextMessageId() {
-        if (messageSequenceIdGenerator == Integer.MAX_VALUE) {
-            messageSequenceIdGenerator = Integer.MIN_VALUE;
-        }
-
-        messageSequenceIdGenerator++;
-        return messageSequenceIdGenerator;
-    }
-
     // visible for testing
     void ackResponseCallback(int messageId) {
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(messageId);
@@ -88,6 +84,7 @@ class OrderPreservingUdpGridClient implements Closeable {
             lAndM.latch.countDown();
         }
 
+        msgInFlight.set(false);
         // piggy back another send
         processMsgQueue();
     }
@@ -110,19 +107,28 @@ class OrderPreservingUdpGridClient implements Closeable {
     }
 
     private synchronized void queueUpMessage(Message msg, CountDownLatchFuture latch) {
-        msg.messageId = nextMessageId();
+        msg.messageId = generateNextMessageId();
         messageIdToLatchAndMessage.put(msg.messageId, new LatchAndMessage(latch, msg));
         messageIdsToSend.offer(msg.messageId);
     }
 
-    private synchronized Integer nextMessageToSend() {
-        Integer msgIdToSend = messageIdsToSend.peek();
-        return (msgIdToSend == null || previousMessageStillInFlight(msgIdToSend)) ? null : messageIdsToSend.poll();
+    private int generateNextMessageId() {
+        if (messageSequenceIdGenerator == Integer.MAX_VALUE) {
+            messageSequenceIdGenerator = Integer.MIN_VALUE;
+        } else {
+            messageSequenceIdGenerator++;
+        }
+
+        return messageSequenceIdGenerator;
     }
 
-    private boolean previousMessageStillInFlight(int msgIdToSend) {
-        msgIdToSend--;
-        return lastAckedMessage.get() == msgIdToSend;
+    private synchronized Integer nextMessageToSend() {
+        if (msgInFlight.get()) {
+            return null;
+        } else {
+            msgInFlight.set(true);
+            return messageIdsToSend.poll();
+        }
     }
 
     protected ChannelFuture innerSend(Message msg) throws IOException {
