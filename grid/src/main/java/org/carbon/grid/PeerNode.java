@@ -25,14 +25,14 @@ import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
 
 class PeerNode implements Closeable {
-    private final short nodeId;
+    private final short theNodeITalkTo;
     private final InetSocketAddress peerAddr;
     private final OrderPreservingUdpGridClient client;
 
-    PeerNode(short nodeId, String host, int port, EventLoopGroup workerGroup, InternalCache internalCache) {
-        this.nodeId = nodeId;
+    PeerNode(short theNodeITalkTo, String host, int port, EventLoopGroup workerGroup, InternalCache internalCache) {
+        this.theNodeITalkTo = theNodeITalkTo;
         this.peerAddr = SocketUtils.socketAddress(host, port);
-        this.client = new OrderPreservingUdpGridClient(peerAddr, workerGroup, internalCache);
+        this.client = new OrderPreservingUdpGridClient(theNodeITalkTo, peerAddr, workerGroup, internalCache);
     }
 
     Future<Void> send(Message msg) throws IOException {
@@ -46,6 +46,6 @@ class PeerNode implements Closeable {
 
     @Override
     public String toString() {
-        return "nodeId: " + nodeId + " addr: " + peerAddr;
+        return "theNodeITalkTo: " + theNodeITalkTo + " addr: " + peerAddr;
     }
 }

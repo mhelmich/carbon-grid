@@ -24,27 +24,31 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.nio.NioDatagramChannel;
+import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 class OrderPreservingUdpGridClient implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(OrderPreservingUdpGridClient.class);
-    private final ChannelFuture channelFuture;
-    private final InetSocketAddress addr;
 
-    private final ConcurrentHashMap<Integer, LatchAndMessage> messageIdToLatchAndMessage = new ConcurrentHashMap<>(128, .75f, 64);
+    private final NonBlockingHashMap<Integer, LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMap<>();
     private final LinkedBlockingQueue<Integer> messageIdsToSend = new LinkedBlockingQueue<>();
     private final AtomicInteger lastAckedMessage = new AtomicInteger(Integer.MAX_VALUE);
     private final AtomicInteger messageIdGenerator = new AtomicInteger(Integer.MIN_VALUE);
 
-    OrderPreservingUdpGridClient(InetSocketAddress addr, EventLoopGroup workerGroup, InternalCache internalCache) {
+    private final ChannelFuture channelFuture;
+    private final InetSocketAddress addr;
+    private final short theNodeITalkTo;
+
+
+    OrderPreservingUdpGridClient(short theNodeITalkTo, InetSocketAddress addr, EventLoopGroup workerGroup, InternalCache internalCache) {
+        this.theNodeITalkTo = theNodeITalkTo;
         Bootstrap b = new Bootstrap();
         b.group(workerGroup)
                 .channel(NioDatagramChannel.class)
@@ -115,6 +119,11 @@ class OrderPreservingUdpGridClient implements Closeable {
     @Override
     public void close() throws IOException {
         channelFuture.channel().close();
+    }
+
+    @Override
+    public String toString() {
+        return "theNodeITalkTo: " + theNodeITalkTo + " addr: " + addr;
     }
 
     private static class LatchAndMessage {

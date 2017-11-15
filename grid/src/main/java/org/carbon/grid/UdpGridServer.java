@@ -22,11 +22,16 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.nio.NioDatagramChannel;
+import org.cliffc.high_scale_lib.NonBlockingHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
 
 class UdpGridServer implements Closeable {
+    private final static Logger logger = LoggerFactory.getLogger(UdpGridServer.class);
+    private final NonBlockingHashMap<Short, Integer> nodeIdToLastAckedMsgId = new NonBlockingHashMap<>();
     private final Channel channel;
 
     UdpGridServer(int port, EventLoopGroup workerGroup, InternalCache internalCache) {
@@ -38,16 +43,34 @@ class UdpGridServer implements Closeable {
                     @Override
                     public void initChannel(final NioDatagramChannel ch) throws Exception {
                         ch.pipeline().addLast(
-                                new GridServerHandler(internalCache)
+                                new GridServerHandler(
+                                        internalCache,
+                                        nodeId -> getLastAckedMsgIdCallback(nodeId),
+                                        (nodeId, msgId) -> setLastAckedMsgIdCallback(nodeId, msgId)
+                                )
                         );
                     }
                 });
         try {
-            // bind and start to accept incoming connections (and wait for the bind to finish)
+            // bind and start to accept incoming connections
+            // (and wait for the bind to finish)
             channel = b.bind(port).sync().channel();
         } catch (InterruptedException xcp) {
             throw new RuntimeException(xcp);
         }
+    }
+
+    private Integer getLastAckedMsgIdCallback(short nodeId) {
+        return nodeIdToLastAckedMsgId.get(nodeId);
+    }
+
+    private void setLastAckedMsgIdCallback(short nodeId, int msgId) {
+        nodeIdToLastAckedMsgId.put(nodeId, msgId);
+    }
+
+    @Override
+    public String toString() {
+        return "addr: " + channel.localAddress() + " nodeIdToLastAckedMsgId: " + nodeIdToLastAckedMsgId;
     }
 
     @Override

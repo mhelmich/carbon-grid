@@ -17,6 +17,7 @@
 package org.carbon.grid;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import org.cliffc.high_scale_lib.NonBlockingSetInt;
 
 import java.util.Set;
@@ -73,7 +74,7 @@ class CacheLine {
     }
 
     ByteBuf resetReaderAndGetData() {
-        return data.resetReaderIndex();
+        return (data != null) ? data.resetReaderIndex() : Unpooled.EMPTY_BUFFER;
     }
 
     void addSharer(short newSharer) {

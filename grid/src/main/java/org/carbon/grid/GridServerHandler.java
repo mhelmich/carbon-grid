@@ -25,15 +25,19 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
 
 class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     private final static Logger logger = LoggerFactory.getLogger(GridServerHandler.class);
-    private final static ConcurrentHashMap<Short, Integer> nodeToLastAckedMessageId = new ConcurrentHashMap<>(128, .75f, 64);
     private final InternalCache internalCache;
+    private final Function<Short, Integer> getLastAckedMsgForNode;
+    private final BiConsumer<Short, Integer> setLastAckedMsgForNode;
 
-    GridServerHandler(InternalCache internalCache) {
+    GridServerHandler(InternalCache internalCache, Function<Short, Integer> getLastAckedMsgForNode, BiConsumer<Short, Integer> setLastAckedMsgForNode) {
         this.internalCache = internalCache;
+        this.getLastAckedMsgForNode = getLastAckedMsgForNode;
+        this.setLastAckedMsgForNode = setLastAckedMsgForNode;
     }
 
     @Override
@@ -46,8 +50,8 @@ class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
             request.read(in);
         }
 
+        logger.info("received message: {}", request);
         if (shouldHandleMessage(request)) {
-            logger.info("received message type: {} messageId {}", requestMessageType, request.messageId);
             Message.Response response = internalCache.handleRequest(request);
 
             if (response != null) {
@@ -57,11 +61,12 @@ class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
                 }
 
                 ctx.writeAndFlush(new DatagramPacket(outBites, packet.sender()));
-                nodeToLastAckedMessageId.put(request.sender, request.messageId);
+                setLastAckedMsgForNode.accept(request.sender, request.messageId);
             }
         } else {
+            logger.info("dropped message with id {} because ids have a gap", request.messageId);
             // drop and resend last acked messageId + 1
-            requestResend(ctx, nodeToLastAckedMessageId.get(request.sender) + 1, packet.sender());
+            requestResend(ctx, getLastAckedMsgForNode.apply(request.sender) + 1, packet.sender());
         }
     }
 
@@ -75,11 +80,16 @@ class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     }
 
     private boolean shouldHandleMessage(Message.Request request) {
-        Integer lastAckedMessageId = nodeToLastAckedMessageId.get(request.sender);
-        return lastAckedMessageId == null || isNext(lastAckedMessageId, request.messageId);
+        Integer lastAckedMessageId = getLastAckedMsgForNode.apply(request.sender);
+        if (lastAckedMessageId == null) {
+            return true;
+        }
+
+        return isNext(lastAckedMessageId, request.messageId);
     }
 
     private boolean isNext(int lastAckedMessageId, int receivedMessageId) {
+        logger.info("lastAckedMessageId {} receivedMessageId {}", lastAckedMessageId, receivedMessageId);
         if (lastAckedMessageId == Integer.MAX_VALUE) {
             return receivedMessageId == Integer.MIN_VALUE;
         } else {
