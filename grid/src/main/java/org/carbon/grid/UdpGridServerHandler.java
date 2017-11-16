@@ -28,13 +28,13 @@ import java.net.InetSocketAddress;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
-class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
-    private final static Logger logger = LoggerFactory.getLogger(GridServerHandler.class);
+class UdpGridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
+    private final static Logger logger = LoggerFactory.getLogger(UdpGridServerHandler.class);
     private final InternalCache internalCache;
     private final Function<Short, Integer> getLastAckedMsgForNode;
     private final BiConsumer<Short, Integer> setLastAckedMsgForNode;
 
-    GridServerHandler(InternalCache internalCache, Function<Short, Integer> getLastAckedMsgForNode, BiConsumer<Short, Integer> setLastAckedMsgForNode) {
+    UdpGridServerHandler(InternalCache internalCache, Function<Short, Integer> getLastAckedMsgForNode, BiConsumer<Short, Integer> setLastAckedMsgForNode) {
         this.internalCache = internalCache;
         this.getLastAckedMsgForNode = getLastAckedMsgForNode;
         this.setLastAckedMsgForNode = setLastAckedMsgForNode;

@@ -42,7 +42,7 @@ class UdpGridServer implements Closeable {
                     @Override
                     public void initChannel(final NioDatagramChannel ch) throws Exception {
                         ch.pipeline().addLast(
-                                new GridServerHandler(
+                                new UdpGridServerHandler(
                                         internalCache,
                                         nodeId -> getLastAckedMsgIdCallback(nodeId),
                                         (nodeId, msgId) -> setLastAckedMsgIdCallback(nodeId, msgId)

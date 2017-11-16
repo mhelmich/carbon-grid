@@ -72,7 +72,7 @@ class OrderPreservingUdpGridClient implements Closeable {
         return new Bootstrap().group(workerGroup)
                 .channel(NioDatagramChannel.class)
                 .option(ChannelOption.SO_BROADCAST, true)
-                .handler(new GridClientHandler(internalCache, this::ackResponseCallback, this::resendCallBack));
+                .handler(new UdpGridClientHandler(internalCache, this::ackResponseCallback, this::resendCallBack));
     }
 
     /**

@@ -25,13 +25,13 @@ import org.slf4j.LoggerFactory;
 
 import java.util.function.Consumer;
 
-class GridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
-    private final static Logger logger = LoggerFactory.getLogger(GridClientHandler.class);
+class UdpGridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
+    private final static Logger logger = LoggerFactory.getLogger(UdpGridClientHandler.class);
     private final InternalCache internalCache;
     private final Consumer<Integer> messageAckCallback;
     private final Consumer<Integer> messageResendCallback;
 
-    GridClientHandler(InternalCache internalCache, Consumer<Integer> messageAckCallback, Consumer<Integer> messageResendCallback) {
+    UdpGridClientHandler(InternalCache internalCache, Consumer<Integer> messageAckCallback, Consumer<Integer> messageResendCallback) {
         this.internalCache = internalCache;
         this.messageAckCallback = messageAckCallback;
         this.messageResendCallback = messageResendCallback;
