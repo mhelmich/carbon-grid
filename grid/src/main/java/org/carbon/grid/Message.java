@@ -221,6 +221,7 @@ abstract class Message implements Persistable {
             return super.calcByteSize()
                     + 8                 // line id long
                     + 4                 // version number int
+                    + 4                 // bytebuf size
                     + data.capacity();  // buffer content
         }
 
@@ -229,6 +230,7 @@ abstract class Message implements Persistable {
             super.write(out);
             out.writeLong(lineId);
             out.writeInt(version);
+            out.writeInt(data.capacity());
             out.writeByteBuf(data.resetReaderIndex());
         }
 
@@ -237,7 +239,8 @@ abstract class Message implements Persistable {
             super.read(in);
             lineId = in.readLong();
             version = in.readInt();
-            data = in.readByteBuf();
+            int bytesToRead = in.readInt();
+            data = in.readByteBuf(bytesToRead);
         }
     }
 
@@ -294,7 +297,6 @@ abstract class Message implements Persistable {
     static class PUTX extends Response {
         long lineId;
         int version;
-        short parts;
         // variable and potentially unbounded size
         List<Short> sharers;
         ByteBuf data;
@@ -313,6 +315,7 @@ abstract class Message implements Persistable {
                     + 8                    // line id long
                     + 4                    // version number int
                     + (2 * sharers.size()) //
+                    + 4                    // bytebuf size
                     + data.capacity();     // buffer content
         }
 
@@ -325,6 +328,7 @@ abstract class Message implements Persistable {
             for (Short s : sharers) {
                 out.writeShort(s);
             }
+            out.writeInt(data.capacity());
             out.writeByteBuf(data.resetReaderIndex());
         }
 
@@ -338,7 +342,8 @@ abstract class Message implements Persistable {
             for (int i = 0; i < numSharers; i++) {
                 sharers.add(in.readShort());
             }
-            data = in.readByteBuf();
+            int bytesToRead = in.readInt();
+            data = in.readByteBuf(bytesToRead);
         }
     }
 

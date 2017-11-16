@@ -41,8 +41,8 @@ public class MessageInput extends InputStream implements DataInput {
         super.close();
     }
 
-    public ByteBuf readByteBuf() throws IOException {
-        return buffer.readRetainedSlice(available());
+    public ByteBuf readByteBuf(int numBytesToRead) throws IOException {
+        return buffer.readRetainedSlice(numBytesToRead);
     }
 
     @Override

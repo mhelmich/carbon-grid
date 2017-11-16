@@ -27,18 +27,16 @@ import java.util.concurrent.Future;
 class PeerNode implements Closeable {
     private final short theNodeITalkTo;
     private final InetSocketAddress peerAddr;
-    private final OrderPreservingUdpGridClient client;
+    private final TcpGridClient client;
 
     PeerNode(short theNodeITalkTo, InetSocketAddress peerAddr, EventLoopGroup workerGroup, InternalCache internalCache) {
         this.theNodeITalkTo = theNodeITalkTo;
         this.peerAddr = peerAddr;
-        this.client = new OrderPreservingUdpGridClient(theNodeITalkTo, peerAddr, workerGroup, internalCache);
+        this.client = new TcpGridClient(theNodeITalkTo, peerAddr, workerGroup, internalCache);
     }
 
     PeerNode(short theNodeITalkTo, String host, int port, EventLoopGroup workerGroup, InternalCache internalCache) {
-        this.theNodeITalkTo = theNodeITalkTo;
-        this.peerAddr = SocketUtils.socketAddress(host, port);
-        this.client = new OrderPreservingUdpGridClient(theNodeITalkTo, peerAddr, workerGroup, internalCache);
+        this(theNodeITalkTo, SocketUtils.socketAddress(host, port), workerGroup, internalCache);
     }
 
     Future<Void> send(Message msg) throws IOException {

@@ -31,9 +31,10 @@ import java.util.concurrent.Future;
 
 class GridCommunications implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(GridCommunications.class);
+    private final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
     private final NodeRegistry nodeRegistry;
-    private final UdpGridServer udpGridServer;
+    private final TcpGridServer tcpGridServer;
     final short myNodeId;
     final int myServerPort;
     final InternalCache myInternalCache;
@@ -50,7 +51,7 @@ class GridCommunications implements Closeable {
         this.myNodeId = myNodeId;
         this.myServerPort = port;
         this.myInternalCache = internalCache;
-        this.udpGridServer = new UdpGridServer(port, workerGroup, internalCache);
+        this.tcpGridServer = new TcpGridServer(port, bossGroup, workerGroup, internalCache);
         this.nodeRegistry = new NodeRegistry(workerGroup, internalCache);
     }
 
@@ -77,16 +78,20 @@ class GridCommunications implements Closeable {
         return new CompositeFuture(futures);
     }
 
+    private void closeQuietly(Closeable closeable) {
+        if (closeable == null) return;
+        try {
+            closeable.close();
+        } catch (IOException xcp) {
+            logger.error("Error while closing", xcp);
+        }
+    }
+
     @Override
     public void close() throws IOException {
-        try {
-            nodeRegistry.close();
-        } finally {
-            try {
-                udpGridServer.close();
-            } finally {
-                workerGroup.shutdownGracefully();
-            }
-        }
+        closeQuietly(nodeRegistry);
+        closeQuietly(tcpGridServer);
+        workerGroup.shutdownGracefully();
+        bossGroup.shutdownGracefully();
     }
 }

@@ -39,6 +39,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 class TcpGridClient extends AbstractClient {
+    private final static Logger logger = LoggerFactory.getLogger(TcpGridClient.class);
+
     private final ChannelFuture channelFuture;
     private final NonBlockingHashMap<Integer, LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMap<>();
     private final AtomicInteger messageIdGenerator = new AtomicInteger(Integer.MIN_VALUE);
@@ -90,9 +92,13 @@ class TcpGridClient extends AbstractClient {
         return newId;
     }
 
-    void ackResponseCallback(int messageId) {
+    private void ackResponseCallback(int messageId) {
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(messageId);
-        lAndM.latch.countDown();
+        if (lAndM == null) {
+            logger.info("seeing message id {} again", messageId);
+        } else {
+            lAndM.latch.countDown();
+        }
     }
 
     private ChannelFuture innerSend(Message msg) throws IOException {
