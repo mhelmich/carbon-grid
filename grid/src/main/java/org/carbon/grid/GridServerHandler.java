@@ -96,4 +96,9 @@ class GridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
             return lastAckedMessageId + 1 == receivedMessageId;
         }
     }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        logger.error("Error in server handler", cause);
+    }
 }
