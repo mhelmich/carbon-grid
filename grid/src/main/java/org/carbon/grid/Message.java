@@ -21,6 +21,7 @@ import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -38,6 +39,8 @@ abstract class Message implements Persistable {
         BACKUP((byte)5),
         BACUP_ACK((byte)6),
         RESEND((byte)7),
+        GETX((byte)8),
+        PUTX((byte)9),
         ;
 
         private final static Map<Byte, MessageType> byteToType = new HashMap<>(MessageType.values().length);
@@ -158,7 +161,7 @@ abstract class Message implements Persistable {
         long lineId;
 
         GET() {
-            this(-1, -1);
+            super(MessageType.GET, (short)-1);
         }
 
         GET(short node, long lineId) {
@@ -259,6 +262,74 @@ abstract class Message implements Persistable {
         @Override
         public void read(MessageInput in) throws IOException {
             super.read(in);
+        }
+    }
+
+    static class GETX extends Request {
+        long lineId;
+
+        GETX(short node) {
+            super(MessageType.GETX, node);
+        }
+
+        @Override
+        int calcByteSize() {
+            return super.calcByteSize() + 8;
+        }
+
+        @Override
+        public void write(MessageOutput out) throws IOException {
+            super.write(out);
+            out.writeLong(lineId);
+        }
+
+        @Override
+        public void read(MessageInput in) throws IOException {
+            super.read(in);
+            lineId = in.readLong();
+        }
+    }
+
+    static class PUTX extends Response {
+        long lineId;
+        int version;
+        // TODO -- this ain't good -- variable potentially unbounded size
+        List<Short> sharers;
+        ByteBuf data;
+
+        PUTX() {
+            super(MessageType.PUTX);
+        }
+
+        PUTX(Request inResponseTo) {
+            super(MessageType.PUTX, inResponseTo);
+        }
+
+        @Override
+        int calcByteSize() {
+            return super.calcByteSize()
+                    + 8                 // line id long
+                    + 4                 // version number int
+                    // TODO -- don't forget the sharer list
+                    + data.capacity();  // buffer content
+        }
+
+        @Override
+        public void write(MessageOutput out) throws IOException {
+            super.write(out);
+            out.writeLong(lineId);
+            out.writeInt(version);
+            // TODO -- write sharers
+            out.writeByteBuf(data.resetReaderIndex());
+        }
+
+        @Override
+        public void read(MessageInput in) throws IOException {
+            super.read(in);
+            lineId = in.readLong();
+            version = in.readInt();
+            // TODO -- read sharers
+            data = in.readByteBuf();
         }
     }
 
