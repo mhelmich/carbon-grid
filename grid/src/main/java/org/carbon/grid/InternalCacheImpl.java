@@ -31,6 +31,25 @@ import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
+/**
+ * This is the main class.
+ * It
+ *
+ * Design ideas:
+ * http://blog.paralleluniverse.co/2012/07/26/galaxy-internals-part-1/
+ * http://blog.paralleluniverse.co/2012/08/03/galaxy-internals-part-2/
+ * http://blog.paralleluniverse.co/2012/08/09/galaxy-internals-part-3/
+ *
+ * ToDo List:
+ * -  XXX basic message passing and marshalling logic
+ * - build netty encoders and decoders
+ * - MOESI coherence protocol implementation
+ * - clustering & synchronization (cache line ids, cluster members, ...)
+ * - fail over / topology changes / node failures
+ * - slab allocation and page management
+ * - resilient memory across nodes
+ *
+ */
 class InternalCacheImpl implements InternalCache, Closeable {
     private final static Logger logger = LoggerFactory.getLogger(InternalCacheImpl.class);
     private static Random random = new Random();

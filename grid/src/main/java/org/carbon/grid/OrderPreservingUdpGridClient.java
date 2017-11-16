@@ -39,6 +39,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * This client class is responsible for sending out UDP packets to one particular node in the cluster.
  * It does preserve ordering of messages as in: Messages will be received by the other party in the order they are being sent.
  * This class does so by implementing a simple stop-and-wait ARQ (see https://en.wikipedia.org/wiki/Sliding_window_protocol).
+ *
+ * ToDos:
+ * - build more efficient message packing and sending
  */
 class OrderPreservingUdpGridClient implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(OrderPreservingUdpGridClient.class);
