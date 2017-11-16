@@ -34,15 +34,9 @@ import java.io.IOException;
 import java.util.List;
 
 class TcpGridServer extends AbstractServer {
-
-    private final EventLoopGroup bossGroup;
-    private final EventLoopGroup workerGroup;
     private final Channel channel;
 
-    TcpGridServer(int port, EventLoopGroup bossGroup, EventLoopGroup workerGroup, InternalCache internalCache) {
-        this.bossGroup = bossGroup;
-        this.workerGroup = workerGroup;
-
+    TcpGridServer(int port, EventLoopGroup bossGroup, EventLoopGroup workerGroup, InternalCache internalCache, NodeRegistry nodeRegistry) {
         ServerBootstrap b = new ServerBootstrap()
                 .group(bossGroup, workerGroup)
                 .channel(NioServerSocketChannel.class)
@@ -53,7 +47,7 @@ class TcpGridServer extends AbstractServer {
                                 ch.pipeline().addLast(
                                         new RequestDecoder(),
                                         new ResponseEncoder(),
-                                        new TcpGridServerHandler(internalCache)
+                                        new TcpGridServerHandler(internalCache, nodeRegistry)
                                 );
                             }
                         }
@@ -64,7 +58,7 @@ class TcpGridServer extends AbstractServer {
 
     @Override
     public void close() throws IOException {
-        channel.close();
+        channel.close().syncUninterruptibly();
     }
 
     private static class RequestDecoder extends ReplayingDecoder<Message.Request> {
@@ -99,9 +93,11 @@ class TcpGridServer extends AbstractServer {
         private final static Logger logger = LoggerFactory.getLogger(TcpGridServerHandler.class);
 
         private final InternalCache internalCache;
+        private final NodeRegistry nodeRegistry;
 
-        TcpGridServerHandler(InternalCache internalCache) {
+        TcpGridServerHandler(InternalCache internalCache, NodeRegistry nodeRegistry) {
             this.internalCache = internalCache;
+            this.nodeRegistry = nodeRegistry;
         }
 
         @Override
@@ -113,6 +109,8 @@ class TcpGridServer extends AbstractServer {
         protected void channelRead0(ChannelHandlerContext ctx, Message.Request request) throws Exception {
             Message.Response response = internalCache.handleRequest(request);
             if (response != null) {
+//                PeerNode pn = nodeRegistry.getPeerForNodeId(request.sender);
+//                pn.send(response);
                 ctx.writeAndFlush(response);
             }
         }

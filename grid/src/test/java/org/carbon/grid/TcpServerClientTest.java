@@ -40,8 +40,11 @@ public class TcpServerClientTest {
         InternalCache cacheServer = new InternalCacheImpl(123, serverPort);
         InternalCache cacheClient = Mockito.mock(InternalCache.class);
 
+        NodeRegistry nr = new NodeRegistry(workerGroup, cacheServer);
+        nr.addPeer(123, "localhost", 1234);
+
         try {
-            try (TcpGridServer server = new TcpGridServer(serverPort, bossGroup, workerGroup, cacheServer)) {
+            try (TcpGridServer server = new TcpGridServer(serverPort, bossGroup, workerGroup, cacheServer, nr)) {
                 try (TcpGridClient client = new TcpGridClient((short)123, SocketUtils.socketAddress("localhost", serverPort), workerGroup, cacheClient)) {
                     CountDownLatchFuture latch = client.send(get);
                     latch.get();

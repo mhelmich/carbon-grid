@@ -18,18 +18,21 @@ package org.carbon.grid;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import org.cliffc.high_scale_lib.NonBlockingSetInt;
+import org.cliffc.high_scale_lib.NonBlockingHashSet;
 
+import java.util.Collections;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 
 class CacheLine {
     private final long id;
     private volatile CacheLineState state;
     private volatile int version;
     private short owner = -1;
-    private NonBlockingSetInt sharers;
+    private NonBlockingHashSet<Short> sharers;
     private byte flags;
-    private final ByteBuf data;
+    private ByteBuf data;
+    private final ReentrantLock lock = new ReentrantLock();
 
     CacheLine(long id, int version, short owner, ByteBuf data) {
         this.id = id;
@@ -43,7 +46,6 @@ class CacheLine {
     }
 
     void setState(CacheLineState state) {
-        version++;
         this.state = state;
     }
 
@@ -52,7 +54,6 @@ class CacheLine {
     }
 
     void setOwner(short owner) {
-        version++;
         this.owner = owner;
     }
 
@@ -60,12 +61,15 @@ class CacheLine {
         return owner;
     }
 
+    void setVersion(int version) {
+        this.version = version;
+    }
+
     int getVersion() {
         return version;
     }
 
     void setFlags(byte flags) {
-        version++;
         this.flags = flags;
     }
 
@@ -77,11 +81,28 @@ class CacheLine {
         return (data != null) ? data.resetReaderIndex() : Unpooled.EMPTY_BUFFER;
     }
 
+    void setData(ByteBuf data) {
+        version++;
+        this.data.release();
+        this.data = data;
+    }
+
+    void setSharers(Set<Short> sharers) {
+        if (!sharers.isEmpty()) {
+            if (this.sharers == null) {
+                this.sharers = new NonBlockingHashSet<>();
+            } else {
+                this.sharers.clear();
+            }
+            this.sharers.addAll(sharers);
+        }
+    }
+
     void addSharer(short newSharer) {
         if (sharers == null) {
             synchronized (this) {
                 if (sharers == null) {
-                    sharers = new NonBlockingSetInt();
+                    sharers = new NonBlockingHashSet<>();
                 }
             }
         }
@@ -89,12 +110,24 @@ class CacheLine {
         sharers.add(newSharer);
     }
 
-    Set<Integer> getSharers() {
-        return sharers;
+    Set<Short> getSharers() {
+        return sharers == null ? Collections.emptySet() : sharers;
+    }
+
+    void clearSharers() {
+        sharers = null;
     }
 
     @Override
     public String toString() {
         return "id: " + id + " state: " + state + " owner: " + owner + " data size: " + data.capacity();
+    }
+
+    void lock() {
+        lock.tryLock();
+    }
+
+    void unlock() {
+        lock.unlock();
     }
 }

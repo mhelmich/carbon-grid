@@ -17,6 +17,7 @@
 package org.carbon.grid;
 
 import io.netty.channel.EventLoopGroup;
+import io.netty.util.internal.SocketUtils;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -39,8 +40,8 @@ class NodeRegistry implements Closeable {
         nodeIdToPeer.putIfAbsent(nodeId, new PeerNode(nodeId, addr, workerGroup, internalCache));
     }
 
-    void addPeer(short nodeId, String host, int port) {
-        nodeIdToPeer.putIfAbsent(nodeId, new PeerNode(nodeId, host, port, workerGroup, internalCache));
+    void addPeer(int nodeId, String host, int port) {
+        addPeer((short)nodeId, SocketUtils.socketAddress(host, port));
     }
 
     PeerNode getPeerForNodeId(short nodeId) {

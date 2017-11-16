@@ -33,11 +33,11 @@ class GridCommunications implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(GridCommunications.class);
     private final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
+
+    final short myNodeId;
+    private final int myServerPort;
     private final NodeRegistry nodeRegistry;
     private final TcpGridServer tcpGridServer;
-    final short myNodeId;
-    final int myServerPort;
-    final InternalCache myInternalCache;
 
     GridCommunications(int myNodeId, InternalCache internalCache) {
         this(myNodeId, 9876, internalCache);
@@ -50,9 +50,8 @@ class GridCommunications implements Closeable {
     private GridCommunications(short myNodeId, int port, InternalCache internalCache) {
         this.myNodeId = myNodeId;
         this.myServerPort = port;
-        this.myInternalCache = internalCache;
-        this.tcpGridServer = new TcpGridServer(port, bossGroup, workerGroup, internalCache);
         this.nodeRegistry = new NodeRegistry(workerGroup, internalCache);
+        this.tcpGridServer = new TcpGridServer(port, bossGroup, workerGroup, internalCache, nodeRegistry);
     }
 
     void addPeer(short nodeId, InetSocketAddress addr) {
@@ -62,6 +61,11 @@ class GridCommunications implements Closeable {
 
     void addPeer(short nodeId, String host, int port) {
         addPeer(nodeId, SocketUtils.socketAddress(host, port));
+    }
+
+    Future<Void> send(short toNode, Message msg) throws IOException {
+        PeerNode peer = nodeRegistry.getPeerForNodeId(toNode);
+        return peer.send(msg);
     }
 
     Future<Void> send(Message msg) throws IOException {
@@ -93,5 +97,10 @@ class GridCommunications implements Closeable {
         closeQuietly(tcpGridServer);
         workerGroup.shutdownGracefully();
         bossGroup.shutdownGracefully();
+    }
+
+    @Override
+    public String toString () {
+        return "myNodeId: " + myNodeId + " myServerPort: " + myServerPort;
     }
 }

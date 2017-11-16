@@ -59,8 +59,10 @@ class InternalCacheImpl implements InternalCache, Closeable {
     private final NonBlockingHashMapLong<CacheLine> shared = new NonBlockingHashMapLong<>();
 
     final GridCommunications comms;
+    final short myNodeId;
 
     InternalCacheImpl(int myNodeId, int myPort) {
+        this.myNodeId = (short) myNodeId;
         comms = new GridCommunications(myNodeId, myPort, this);
     }
 
@@ -94,7 +96,31 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     private Message.Response handleGETX(Message.GETX getx) {
-        return null;
+        CacheLine line = owned.remove(getx.lineId);
+        if (line != null) {
+            Set<Short> sharersToSend = line.getSharers();
+
+            // change local status and status of cache line
+            line.setState(CacheLineState.INVALID);
+            line.setOwner(getx.sender);
+            line.clearSharers();
+            shared.put(getx.lineId, line);
+
+            // massage sharers list
+            sharersToSend.remove(getx.sender);
+            sharersToSend.remove(myNodeId);
+
+            // compose message
+            Message.PUTX putx = new Message.PUTX(getx, myNodeId);
+            putx.lineId = line.getId();
+            putx.version = line.getVersion();
+            putx.sharers = sharersToSend;
+            putx.data = line.resetReaderAndGetData();
+            return putx;
+        } else {
+            // todo: send owner changed
+            return null;
+        }
     }
 
     private Message.Response handleGET(Message.GET get) {
@@ -102,9 +128,9 @@ class InternalCacheImpl implements InternalCache, Closeable {
         CacheLine line = owned.get(get.lineId);
         if (line != null) {
             line.addSharer(get.sender);
-            return new Message.PUT(get, get.lineId, line.getVersion(), line.resetReaderAndGetData());
+            return new Message.PUT(get, myNodeId, get.lineId, line.getVersion(), line.resetReaderAndGetData());
         } else {
-            return new Message.ACK(get);
+            return new Message.ACK(get, myNodeId);
         }
     }
 
@@ -113,7 +139,25 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     private void handlePUTX(Message.PUTX putx) {
-
+        final CacheLine oldLine = shared.get(putx.lineId);
+        if (oldLine == null) {
+            // create a new line
+            CacheLine newLine = new CacheLine(putx.lineId, putx.version, myNodeId, putx.data);
+            for (short s : putx.sharers) {
+                newLine.addSharer(s);
+            }
+            newLine.setState(CacheLineState.OWNED);
+            owned.put(putx.lineId, newLine);
+        } else {
+            // promote line from shared to owned
+            oldLine.setOwner(myNodeId);
+            oldLine.setState(CacheLineState.OWNED);
+            oldLine.setSharers(putx.sharers);
+            oldLine.setData(putx.data);
+            oldLine.setVersion(putx.version);
+            owned.put(putx.lineId, oldLine);
+            shared.remove(putx.lineId);
+        }
     }
 
     private void handlePUT(Message.PUT put) {
@@ -190,12 +234,28 @@ class InternalCacheImpl implements InternalCache, Closeable {
 
     @Override
     public ByteBuf getx(long lineId) throws IOException {
-        return null;
+        return getxLineRemotely(lineId).resetReaderAndGetData();
     }
 
     @Override
     public ByteBuffer getxBB(long lineId) throws IOException {
         return getx(lineId).nioBuffer();
+    }
+
+    private CacheLine getxLineRemotely(long lineId) throws IOException {
+        CacheLine line = getLineLocally(lineId);
+        Message.GETX getx = new Message.GETX(myNodeId, lineId);
+        if (line != null) {
+            Future<Void> f = comms.send(line.getOwner(), getx);
+            try {
+                f.get();
+            } catch (InterruptedException | ExecutionException xcp) {
+                throw new IOException(xcp);
+            }
+            return getLineLocally(lineId);
+        } else {
+            return null;
+        }
     }
 
     private CacheLine getLineRemotely(long lineId) throws IOException {
@@ -211,7 +271,8 @@ class InternalCacheImpl implements InternalCache, Closeable {
         return getLineLocally(lineId);
     }
 
-    private CacheLine getLineLocally(long lineId) {
+    // visible for testing
+    CacheLine getLineLocally(long lineId) {
         CacheLine line = owned.get(lineId);
         if (line == null) {
             line = shared.get(lineId);

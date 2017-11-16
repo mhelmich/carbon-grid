@@ -83,6 +83,48 @@ public class CacheTest {
         }
     }
 
+    @Test
+    public void testGetxPutx() throws IOException {
+        ThreeCaches threeCaches = createCluster();
+        String testData = "testing_test";
+        try {
+            // set a line in cache1 and verify both caches
+            long newCacheLineId = threeCaches.cache1.allocateWithData(testData.getBytes());
+            ByteBuf localBB = threeCaches.cache1.get(newCacheLineId);
+            assertEqualsBites(testData.getBytes(), localBB);
+            CacheLine line1 = threeCaches.cache1.getLineLocally(newCacheLineId);
+            assertNotNull(line1);
+            assertEquals(CacheLineState.OWNED, line1.getState());
+            assertEquals(threeCaches.cache1.myNodeId, line1.getOwner());
+            CacheLine line2 = threeCaches.cache2.getLineLocally(newCacheLineId);
+            assertNull(line2);
+
+            // get the line in cache2 and verify the state in cache2
+            ByteBuf localBB2 = threeCaches.cache2.get(newCacheLineId);
+            assertEqualsBites(testData.getBytes(), localBB2);
+            line2 = threeCaches.cache2.getLineLocally(newCacheLineId);
+            assertNotNull(line2);
+            assertEquals(CacheLineState.SHARED, line2.getState());
+            assertEquals(threeCaches.cache1.myNodeId, line2.getOwner());
+            line1 = threeCaches.cache1.getLineLocally(newCacheLineId);
+            assertEquals(CacheLineState.OWNED, line1.getState());
+            assertEquals(threeCaches.cache1.myNodeId, line1.getOwner());
+
+            // transfer ownership
+            ByteBuf remoteBB = threeCaches.cache2.getx(newCacheLineId);
+            assertEqualsBites(testData.getBytes(), remoteBB);
+            line2 = threeCaches.cache2.getLineLocally(newCacheLineId);
+            assertNotNull(line2);
+            assertEquals(CacheLineState.OWNED, line2.getState());
+            assertEquals(threeCaches.cache2.myNodeId, line2.getOwner());
+            line1 = threeCaches.cache1.getLineLocally(newCacheLineId);
+            assertEquals(CacheLineState.INVALID, line1.getState());
+            assertEquals(threeCaches.cache2.myNodeId, line1.getOwner());
+        } finally {
+            closeThreeCaches(threeCaches);
+        }
+    }
+
     private byte[] getAllBytesFromBuffer(ByteBuf buffer) {
         byte[] bites = new byte[buffer.readableBytes()];
         buffer.readBytes(bites, 0, bites.length);

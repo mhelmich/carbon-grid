@@ -19,10 +19,8 @@ package org.carbon.grid;
 import io.netty.buffer.ByteBuf;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -42,6 +40,7 @@ abstract class Message implements Persistable {
         RESEND((byte)7),
         GETX((byte)8),
         PUTX((byte)9),
+        OWNER_CHANGED((byte)10)
         ;
 
         private final static Map<Byte, MessageType> byteToType = new HashMap<>(MessageType.values().length);
@@ -72,6 +71,8 @@ abstract class Message implements Persistable {
                 return new ACK();
             case PUT:
                 return new PUT();
+            case PUTX:
+                return new PUTX();
             default:
                 throw new IllegalArgumentException("Unknown type " + type);
         }
@@ -81,6 +82,8 @@ abstract class Message implements Persistable {
         switch (type) {
             case GET:
                 return new GET();
+            case GETX:
+                return new GETX();
             default:
                 throw new IllegalArgumentException("Unknown type " + type);
         }
@@ -88,13 +91,10 @@ abstract class Message implements Persistable {
 
     final MessageType type;
     int messageId;
-    // this field has two semantics
-    // 1. in a request it is the sender
-    // 2. in a response it's the receiver
     short sender;
 
-    private Message(MessageType type, Request inResponseTo) {
-        this(type, inResponseTo.messageId, inResponseTo.sender);
+    private Message(MessageType type, Request inResponseTo, short sender) {
+        this(type, inResponseTo.messageId, sender);
     }
 
     private Message(MessageType type) {
@@ -153,8 +153,8 @@ abstract class Message implements Persistable {
             super(type);
         }
 
-        private Response(MessageType type, Request inResponseTo) {
-            super(type, inResponseTo);
+        private Response(MessageType type, Request inResponseTo, short sender) {
+            super(type, inResponseTo, sender);
         }
     }
 
@@ -209,8 +209,8 @@ abstract class Message implements Persistable {
             super(MessageType.PUT);
         }
 
-        PUT(Request inResponseTo, long lineId, int version, ByteBuf data) {
-            super(MessageType.PUT, inResponseTo);
+        PUT(Request inResponseTo, short sender, long lineId, int version, ByteBuf data) {
+            super(MessageType.PUT, inResponseTo, sender);
             this.lineId = lineId;
             this.version = version;
             this.data = data;
@@ -245,8 +245,8 @@ abstract class Message implements Persistable {
     }
 
     static class ACK extends Response {
-        ACK(Request inResponseTo) {
-            super(MessageType.ACK, inResponseTo);
+        ACK(Request inResponseTo, short sender) {
+            super(MessageType.ACK, inResponseTo, sender);
         }
 
         ACK() {
@@ -272,8 +272,13 @@ abstract class Message implements Persistable {
     static class GETX extends Request {
         long lineId;
 
-        GETX(short node) {
+        GETX() {
+            super(MessageType.GETX, (short)-1);
+        }
+
+        GETX(short node, long lineId) {
             super(MessageType.GETX, node);
+            this.lineId = lineId;
         }
 
         @Override
@@ -298,15 +303,15 @@ abstract class Message implements Persistable {
         long lineId;
         int version;
         // variable and potentially unbounded size
-        List<Short> sharers;
+        Set<Short> sharers;
         ByteBuf data;
 
         PUTX() {
             super(MessageType.PUTX);
         }
 
-        PUTX(Request inResponseTo) {
-            super(MessageType.PUTX, inResponseTo);
+        PUTX(Request inResponseTo, short sender) {
+            super(MessageType.PUTX, inResponseTo, sender);
         }
 
         @Override
@@ -314,6 +319,7 @@ abstract class Message implements Persistable {
             return super.calcByteSize()
                     + 8                    // line id long
                     + 4                    // version number int
+                    + 2                    // num sharers short
                     + (2 * sharers.size()) //
                     + 4                    // bytebuf size
                     + data.capacity();     // buffer content
@@ -338,7 +344,7 @@ abstract class Message implements Persistable {
             lineId = in.readLong();
             version = in.readInt();
             short numSharers = in.readShort();
-            sharers = new ArrayList<>(numSharers);
+            sharers = new HashSet<>(numSharers);
             for (int i = 0; i < numSharers; i++) {
                 sharers.add(in.readShort());
             }
