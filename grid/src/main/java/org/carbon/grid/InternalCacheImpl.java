@@ -73,6 +73,9 @@ class InternalCacheImpl implements InternalCache, Closeable {
             case PUT:
                 handlePUT((Message.PUT)response);
                 return;
+            case PUTX:
+                handlePUTX((Message.PUTX)response);
+                return;
             default:
                 throw new RuntimeException("Unknown type " + response.type);
         }
@@ -83,9 +86,15 @@ class InternalCacheImpl implements InternalCache, Closeable {
         switch (request.type) {
             case GET:
                 return handleGET((Message.GET)request);
+            case GETX:
+                return handleGETX((Message.GETX)request);
             default:
                 throw new RuntimeException("Unknown type " + request.type);
         }
+    }
+
+    private Message.Response handleGETX(Message.GETX getx) {
+        return null;
     }
 
     private Message.Response handleGET(Message.GET get) {
@@ -101,6 +110,10 @@ class InternalCacheImpl implements InternalCache, Closeable {
 
     private void handleACK(Message.ACK ack) {
         logger.info("cache handler ack: {}", ack);
+    }
+
+    private void handlePUTX(Message.PUTX putx) {
+
     }
 
     private void handlePUT(Message.PUT put) {
