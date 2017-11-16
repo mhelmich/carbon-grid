@@ -42,6 +42,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * ToDos:
  * - build more efficient message packing and sending
+ * -- right now we send one message and wait for acknowledgement
  */
 class OrderPreservingUdpGridClient implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(OrderPreservingUdpGridClient.class);
