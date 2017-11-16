@@ -19,6 +19,7 @@ package org.carbon.grid;
 import io.netty.buffer.ByteBuf;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -293,7 +294,8 @@ abstract class Message implements Persistable {
     static class PUTX extends Response {
         long lineId;
         int version;
-        // TODO -- this ain't good -- variable potentially unbounded size
+        short parts;
+        // variable and potentially unbounded size
         List<Short> sharers;
         ByteBuf data;
 
@@ -308,10 +310,10 @@ abstract class Message implements Persistable {
         @Override
         int calcByteSize() {
             return super.calcByteSize()
-                    + 8                 // line id long
-                    + 4                 // version number int
-                    // TODO -- don't forget the sharer list
-                    + data.capacity();  // buffer content
+                    + 8                    // line id long
+                    + 4                    // version number int
+                    + (2 * sharers.size()) //
+                    + data.capacity();     // buffer content
         }
 
         @Override
@@ -319,7 +321,10 @@ abstract class Message implements Persistable {
             super.write(out);
             out.writeLong(lineId);
             out.writeInt(version);
-            // TODO -- write sharers
+            out.writeShort(sharers.size());
+            for (Short s : sharers) {
+                out.writeShort(s);
+            }
             out.writeByteBuf(data.resetReaderIndex());
         }
 
@@ -328,7 +333,11 @@ abstract class Message implements Persistable {
             super.read(in);
             lineId = in.readLong();
             version = in.readInt();
-            // TODO -- read sharers
+            short numSharers = in.readShort();
+            sharers = new ArrayList<>(numSharers);
+            for (int i = 0; i < numSharers; i++) {
+                sharers.add(in.readShort());
+            }
             data = in.readByteBuf();
         }
     }
