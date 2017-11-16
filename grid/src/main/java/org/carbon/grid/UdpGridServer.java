@@ -26,6 +26,7 @@ import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
 import java.io.IOException;
 
+@Deprecated
 class UdpGridServer extends AbstractServer {
     // this is the server-wide map of the last message ids that have been acked by this server
     // for each node in the cluster this map keeps track of what the next message id to expect is

@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.function.Consumer;
 
+@Deprecated
 class UdpGridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     private final static Logger logger = LoggerFactory.getLogger(UdpGridClientHandler.class);
     private final InternalCache internalCache;

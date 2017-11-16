@@ -43,6 +43,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * - build more efficient message packing and sending
  * -- right now we send one message and wait for acknowledgement
  */
+@Deprecated
 class OrderPreservingUdpGridClient extends AbstractClient {
     private final static Logger logger = LoggerFactory.getLogger(OrderPreservingUdpGridClient.class);
 

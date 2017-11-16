@@ -28,6 +28,7 @@ import java.net.InetSocketAddress;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
+@Deprecated
 class UdpGridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     private final static Logger logger = LoggerFactory.getLogger(UdpGridServerHandler.class);
     private final InternalCache internalCache;
