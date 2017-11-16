@@ -28,7 +28,6 @@ import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.LinkedList;
@@ -44,7 +43,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * - build more efficient message packing and sending
  * -- right now we send one message and wait for acknowledgement
  */
-class OrderPreservingUdpGridClient implements Closeable {
+class OrderPreservingUdpGridClient extends AbstractClient {
     private final static Logger logger = LoggerFactory.getLogger(OrderPreservingUdpGridClient.class);
 
     private final NonBlockingHashMap<Integer, LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMap<>();
@@ -56,18 +55,16 @@ class OrderPreservingUdpGridClient implements Closeable {
     private final LinkedList<Integer> messageIdsToSend = new LinkedList<>();
     private int messageSequenceIdGenerator = Integer.MIN_VALUE;
 
-    private final short theNodeITalkTo;
     private final ChannelFuture channelFuture;
-    private final InetSocketAddress addr;
 
     OrderPreservingUdpGridClient(short theNodeITalkTo, InetSocketAddress addr, EventLoopGroup workerGroup, InternalCache internalCache) {
-        this.theNodeITalkTo = theNodeITalkTo;
+        super(theNodeITalkTo, addr);
         Bootstrap b = createBootstrap(workerGroup, internalCache);
         this.channelFuture = b.bind(0);
-        this.addr = addr;
     }
 
     // visible for testing
+    @Override
     protected Bootstrap createBootstrap(EventLoopGroup workerGroup, InternalCache internalCache) {
         return new Bootstrap().group(workerGroup)
                 .channel(NioDatagramChannel.class)
@@ -83,6 +80,7 @@ class OrderPreservingUdpGridClient implements Closeable {
      * Therefore this method returns "right away" and takes care of the
      * sending later.
      */
+    @Override
     CountDownLatchFuture send(Message msg) throws IOException {
         CountDownLatchFuture latch = new CountDownLatchFuture();
         queueUpMessage(msg, latch);
@@ -190,11 +188,6 @@ class OrderPreservingUdpGridClient implements Closeable {
     @Override
     public void close() throws IOException {
         channelFuture.channel().close();
-    }
-
-    @Override
-    public String toString() {
-        return "theNodeITalkTo: " + theNodeITalkTo + " addr: " + addr;
     }
 
     private static class LatchAndMessage {

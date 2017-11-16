@@ -24,10 +24,9 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
-import java.io.Closeable;
 import java.io.IOException;
 
-class UdpGridServer implements Closeable {
+class UdpGridServer extends AbstractServer {
     // this is the server-wide map of the last message ids that have been acked by this server
     // for each node in the cluster this map keeps track of what the next message id to expect is
     private final NonBlockingHashMap<Short, Integer> nodeIdToLastAckedMsgId = new NonBlockingHashMap<>();
