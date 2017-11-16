@@ -118,11 +118,16 @@ class OrderPreservingUdpGridClient implements Closeable {
      */
     private void processMsgQueue() {
         Integer msgIdToSend = nextMessageToSend();
+        // null means no message to send because a different message is still in-flight
         if (msgIdToSend != null) {
             LatchAndMessage lnm = messageIdToLatchAndMessage.get(msgIdToSend);
-            if (lnm == null) throw new RuntimeException("Can't find msg id " + msgIdToSend + " in my records!");
+            // if we have a message id in the queue and no corresponding message in the map,
+            // that's a big problem
+            assert lnm != null;
             try {
                 innerSend(lnm.msg);
+                // only remove the message from the queue after sending it succeeded
+                messageIdsToSend.poll();
             } catch (IOException xcp) {
                 throw new RuntimeException(xcp);
             }
@@ -151,7 +156,7 @@ class OrderPreservingUdpGridClient implements Closeable {
             return null;
         } else {
             msgInFlight.set(true);
-            return messageIdsToSend.poll();
+            return messageIdsToSend.peek();
         }
     }
 

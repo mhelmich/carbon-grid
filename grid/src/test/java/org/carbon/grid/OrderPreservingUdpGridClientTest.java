@@ -94,6 +94,36 @@ public class OrderPreservingUdpGridClientTest {
         }
     }
 
+    @Test(expected = RuntimeException.class)
+    public void testSendFailed() throws IOException, NoSuchFieldException, IllegalAccessException {
+        EventLoopGroup workerGroup = Mockito.mock(EventLoopGroup.class);
+        InternalCache cache = Mockito.mock(InternalCache.class);
+        InetSocketAddress addr = SocketUtils.socketAddress("localhost", 9876);
+        try (
+                OrderPreservingUdpGridClient client = new OrderPreservingUdpGridClient((short)7879, addr, workerGroup, cache) {
+                    @Override
+                    protected Bootstrap createBootstrap(EventLoopGroup workerGroup, InternalCache internalCache) {
+                        return Mockito.mock(Bootstrap.class);
+                    }
+
+                    @Override
+                    protected ChannelFuture innerSend(Message msg) throws IOException {
+                        throw new IOException("BOOOM -- this has been planted for you");
+                    }
+
+                    @Override
+                    public void close() throws IOException {
+                        // no op
+                    }
+                }
+        ) {
+            LinkedList<Integer> mq = getMessageQueue(client);
+            Message m1 = new Message.GET(456, 1234567);
+            assertEquals(0, mq.size());
+            client.send(m1);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private LinkedList<Integer> getMessageQueue(OrderPreservingUdpGridClient client) throws IllegalAccessException, NoSuchFieldException {
         Field field = OrderPreservingUdpGridClient.class.getDeclaredField("messageIdsToSend");
