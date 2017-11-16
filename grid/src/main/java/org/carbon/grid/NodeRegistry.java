@@ -20,6 +20,7 @@ import io.netty.channel.EventLoopGroup;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -32,6 +33,10 @@ class NodeRegistry implements Closeable {
     NodeRegistry(EventLoopGroup workerGroup, InternalCache internalCache) {
         this.workerGroup = workerGroup;
         this.internalCache = internalCache;
+    }
+
+    void addPeer(short nodeId, InetSocketAddress addr) {
+        nodeIdToPeer.putIfAbsent(nodeId, new PeerNode(nodeId, addr, workerGroup, internalCache));
     }
 
     void addPeer(short nodeId, String host, int port) {

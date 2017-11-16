@@ -29,6 +29,12 @@ class PeerNode implements Closeable {
     private final InetSocketAddress peerAddr;
     private final OrderPreservingUdpGridClient client;
 
+    PeerNode(short theNodeITalkTo, InetSocketAddress peerAddr, EventLoopGroup workerGroup, InternalCache internalCache) {
+        this.theNodeITalkTo = theNodeITalkTo;
+        this.peerAddr = peerAddr;
+        this.client = new OrderPreservingUdpGridClient(theNodeITalkTo, peerAddr, workerGroup, internalCache);
+    }
+
     PeerNode(short theNodeITalkTo, String host, int port, EventLoopGroup workerGroup, InternalCache internalCache) {
         this.theNodeITalkTo = theNodeITalkTo;
         this.peerAddr = SocketUtils.socketAddress(host, port);

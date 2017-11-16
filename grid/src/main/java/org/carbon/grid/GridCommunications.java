@@ -18,11 +18,13 @@ package org.carbon.grid;
 
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.util.internal.SocketUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.Future;
@@ -36,6 +38,10 @@ class GridCommunications implements Closeable {
     final int myServerPort;
     final InternalCache myInternalCache;
 
+    GridCommunications(int myNodeId, InternalCache internalCache) {
+        this(myNodeId, 9876, internalCache);
+    }
+
     GridCommunications(int myNodeId, int port, InternalCache internalCache) {
         this((short)myNodeId, port, internalCache);
     }
@@ -48,9 +54,13 @@ class GridCommunications implements Closeable {
         this.nodeRegistry = new NodeRegistry(workerGroup, internalCache);
     }
 
+    void addPeer(short nodeId, InetSocketAddress addr) {
+        logger.info("adding peer {} {}", nodeId, addr);
+        nodeRegistry.addPeer(nodeId, addr);
+    }
+
     void addPeer(short nodeId, String host, int port) {
-        logger.info("adding peer {} {} {}", nodeId, host, port);
-        nodeRegistry.addPeer(nodeId, host, port);
+        addPeer(nodeId, SocketUtils.socketAddress(host, port));
     }
 
     Future<Void> send(Message msg) throws IOException {
