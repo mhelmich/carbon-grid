@@ -291,6 +291,16 @@ class InternalCacheImpl implements InternalCache, Closeable {
         return getx(lineId).nioBuffer();
     }
 
+    @Override
+    public void put(long lineId, ByteBuf buffer) {
+
+    }
+
+    @Override
+    public void put(long lineId, ByteBuffer buffer) {
+        put(lineId, Unpooled.wrappedBuffer(buffer));
+    }
+
     private CacheLine getxLineRemotely(long lineId) throws IOException {
         CacheLine line = getLineLocally(lineId);
         Message.GETX getx = new Message.GETX(myNodeId, lineId);

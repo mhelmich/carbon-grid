@@ -33,4 +33,6 @@ public interface Cache {
     ByteBuffer getBB(long lineId) throws IOException;
     ByteBuf getx(long lineId) throws IOException;
     ByteBuffer getxBB(long lineId) throws IOException;
+    void put(long lineId, ByteBuf buffer);
+    void put(long lineId, ByteBuffer buffer);
 }
