@@ -470,7 +470,7 @@ abstract class Message implements Persistable {
 
         @Override
         Message copy() {
-            return null;
+            throw new NotImplementedException();
         }
     }
 
