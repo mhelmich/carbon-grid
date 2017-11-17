@@ -25,18 +25,26 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.MessageToByteEncoder;
 import io.netty.handler.codec.ReplayingDecoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
+/**
+ * Due to fairly special ordering guarantees, a server only receives data.
+ * It never uses the socket the inbound connection creates to send data back.
+ * In order to send data back, it always uses the client callback mechanism.
+ * In a weird sense a server therefore is a read-only component that (by itself)
+ * never sends data back.
+ */
 class TcpGridServer extends AbstractServer {
     private final Channel channel;
 
-    TcpGridServer(int port, EventLoopGroup bossGroup, EventLoopGroup workerGroup, InternalCache internalCache, NodeRegistry nodeRegistry) {
+    TcpGridServer(int port, EventLoopGroup bossGroup, EventLoopGroup workerGroup, InternalCache internalCache, Consumer<Integer> ackMessageCallBack, BiConsumer<Short, Message> sendMessageCallback) {
         ServerBootstrap b = new ServerBootstrap()
                 .group(bossGroup, workerGroup)
                 .channel(NioServerSocketChannel.class)
@@ -45,9 +53,9 @@ class TcpGridServer extends AbstractServer {
                             @Override
                             protected void initChannel(SocketChannel ch) throws Exception {
                                 ch.pipeline().addLast(
-                                        new RequestDecoder(),
-                                        new ResponseEncoder(),
-                                        new TcpGridServerHandler(internalCache, nodeRegistry)
+                                        new MessageDecoder(),
+                                        new TcpGridServerRequestHandler(internalCache, sendMessageCallback),
+                                        new TcpGridServerResponseHandler(internalCache, ackMessageCallBack)
                                 );
                             }
                         }
@@ -61,57 +69,76 @@ class TcpGridServer extends AbstractServer {
         channel.close().syncUninterruptibly();
     }
 
-    private static class RequestDecoder extends ReplayingDecoder<Message.Request> {
+    /**
+     * This decoder reads all kinds of messages from the wire -- in particular
+     * it has to read requests and responses alike.
+     * However, it emits a list of strongly typed messages and this allows handlers
+     * to be specific about whether a message is a response or request.
+     */
+    private static class MessageDecoder extends ReplayingDecoder<Message> {
         @Override
         protected void decode(ChannelHandlerContext ctx, ByteBuf inBites, List<Object> list) throws Exception {
             Message.MessageType requestMessageType = Message.MessageType.fromByte(inBites.readByte());
-            Message.Request request = Message.getRequestForType(requestMessageType);
+            Message message = Message.getMessageForType(requestMessageType);
 
             try (MessageInput in = new MessageInput(inBites)) {
-                request.read(in);
+                message.read(in);
             }
 
-            list.add(request);
+            list.add(message);
         }
     }
 
-    private static class ResponseEncoder extends MessageToByteEncoder<Message.Response> {
-        @Override
-        protected ByteBuf allocateBuffer(ChannelHandlerContext ctx, Message.Response msg, boolean preferDirect) throws Exception {
-            return ctx.alloc().ioBuffer(msg.calcByteSize());
-        }
-
-        @Override
-        protected void encode(ChannelHandlerContext ctx, Message.Response response, ByteBuf outBites) throws Exception {
-            try (MessageOutput out = new MessageOutput(outBites)) {
-                response.write(out);
-            }
-        }
-    }
-
-    private static class TcpGridServerHandler extends SimpleChannelInboundHandler<Message.Request> {
-        private final static Logger logger = LoggerFactory.getLogger(TcpGridServerHandler.class);
+    /**
+     * This is the netty handler for responses.
+     * Beware of the callback that's passed into this class (ackMessageCallBack).
+     * The callback is defined in communications unit and handles bookkeeping wrt futures, etc.
+     */
+    private static class TcpGridServerResponseHandler extends SimpleChannelInboundHandler<Message.Response> {
+        private final static Logger logger = LoggerFactory.getLogger(TcpGridServerResponseHandler.class);
 
         private final InternalCache internalCache;
-        private final NodeRegistry nodeRegistry;
+        private final Consumer<Integer> ackMessageCallBack;
 
-        TcpGridServerHandler(InternalCache internalCache, NodeRegistry nodeRegistry) {
+        TcpGridServerResponseHandler(InternalCache internalCache, Consumer<Integer> ackMessageCallBack) {
             this.internalCache = internalCache;
-            this.nodeRegistry = nodeRegistry;
+            this.ackMessageCallBack = ackMessageCallBack;
         }
 
         @Override
-        public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
-            logger.info("channel registered: {}", ctx);
+        protected void channelRead0(ChannelHandlerContext ctx, Message.Response response) throws Exception {
+            internalCache.handleResponse(response);
+            ackMessageCallBack.accept(response.messageId);
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+            logger.error("Error in server handler", cause);
+        }
+    }
+    /**
+     * This is the netty handler for requests.
+     * Beware of the callback that's passed into this class (sendMessageCallback).
+     * The callback is defined in communications unit and handles the sending of response messages.
+     * NEVER USE NETTYS CONTEXT TO REPLY TO THE CLIENT DIRECTLY!
+     */
+    private static class TcpGridServerRequestHandler extends SimpleChannelInboundHandler<Message.Request> {
+        private final static Logger logger = LoggerFactory.getLogger(TcpGridServerRequestHandler.class);
+
+        private final InternalCache internalCache;
+        private final BiConsumer<Short, Message> sendMessageCallback;
+
+        TcpGridServerRequestHandler(InternalCache internalCache, BiConsumer<Short, Message> sendMessageCallback) {
+            this.internalCache = internalCache;
+            this.sendMessageCallback = sendMessageCallback;
         }
 
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, Message.Request request) throws Exception {
             Message.Response response = internalCache.handleRequest(request);
+            // in case we don't have anything to say, let's save us the trouble
             if (response != null) {
-//                PeerNode pn = nodeRegistry.getPeerForNodeId(request.sender);
-//                pn.send(response);
-                ctx.writeAndFlush(response);
+                sendMessageCallback.accept(request.sender, response);
             }
         }
 

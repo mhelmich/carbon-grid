@@ -17,6 +17,7 @@
 package org.carbon.grid;
 
 import io.netty.buffer.ByteBuf;
+import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -65,6 +66,24 @@ abstract class Message implements Persistable {
         }
     }
 
+    static Message getMessageForType(MessageType type) {
+        switch (type) {
+            case ACK:
+                return new ACK();
+            case PUT:
+                return new PUT();
+            case PUTX:
+                return new PUTX();
+            case GET:
+                return new GET();
+            case GETX:
+                return new GETX();
+            default:
+                throw new IllegalArgumentException("Unknown type " + type);
+        }
+    }
+
+    @Deprecated
     static Response getResponseForType(MessageType type) {
         switch (type) {
             case ACK:
@@ -78,6 +97,7 @@ abstract class Message implements Persistable {
         }
     }
 
+    @Deprecated
     static Request getRequestForType(MessageType type) {
         switch (type) {
             case GET:
@@ -142,6 +162,8 @@ abstract class Message implements Persistable {
         return "message type: " + type + " messageId: " + messageId + " sender: " + sender;
     }
 
+    abstract Message copy();
+
     static abstract class Request extends Message {
         private Request(MessageType type, short node) {
             super(type, node);
@@ -198,6 +220,11 @@ abstract class Message implements Persistable {
         public String toString() {
             return super.toString() + " lineId: " + lineId;
         }
+
+        @Override
+        Message copy() {
+            return new GET(this.sender, lineId);
+        }
     }
 
     static class PUT extends Response {
@@ -242,6 +269,11 @@ abstract class Message implements Persistable {
             int bytesToRead = in.readInt();
             data = in.readByteBuf(bytesToRead);
         }
+
+        @Override
+        Message copy() {
+            throw new NotImplementedException();
+        }
     }
 
     static class ACK extends Response {
@@ -266,6 +298,11 @@ abstract class Message implements Persistable {
         @Override
         public void read(MessageInput in) throws IOException {
             super.read(in);
+        }
+
+        @Override
+        Message copy() {
+            return new ACK();
         }
     }
 
@@ -296,6 +333,11 @@ abstract class Message implements Persistable {
         public void read(MessageInput in) throws IOException {
             super.read(in);
             lineId = in.readLong();
+        }
+
+        @Override
+        Message copy() {
+            throw new NotImplementedException();
         }
     }
 
@@ -350,6 +392,11 @@ abstract class Message implements Persistable {
             }
             int bytesToRead = in.readInt();
             data = in.readByteBuf(bytesToRead);
+        }
+
+        @Override
+        Message copy() {
+            throw new NotImplementedException();
         }
     }
 

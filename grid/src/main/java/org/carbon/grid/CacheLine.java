@@ -77,8 +77,8 @@ class CacheLine {
         return flags;
     }
 
-    ByteBuf resetReaderAndGetData() {
-        return (data != null) ? data.resetReaderIndex() : Unpooled.EMPTY_BUFFER;
+    ByteBuf resetReaderAndGetReadOnlyData() {
+        return (data != null) ? data.resetReaderIndex().asReadOnly() : Unpooled.EMPTY_BUFFER;
     }
 
     void setData(ByteBuf data) {

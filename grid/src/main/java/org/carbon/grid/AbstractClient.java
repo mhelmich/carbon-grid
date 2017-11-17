@@ -22,6 +22,7 @@ import io.netty.channel.EventLoopGroup;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.concurrent.Future;
 
 abstract class AbstractClient implements Closeable {
     private final short theNodeITalkTo;
@@ -37,6 +38,6 @@ abstract class AbstractClient implements Closeable {
         return "theNodeITalkTo: " + theNodeITalkTo + " addr: " + addr;
     }
 
-    abstract CountDownLatchFuture send(Message msg) throws IOException;
+    abstract Future<Void> send(Message msg) throws IOException;
     abstract protected Bootstrap createBootstrap(EventLoopGroup workerGroup, InternalCache internalCache);
 }

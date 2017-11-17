@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
 
+@Deprecated
 class PeerNode implements Closeable {
     private final short theNodeITalkTo;
     private final InetSocketAddress peerAddr;

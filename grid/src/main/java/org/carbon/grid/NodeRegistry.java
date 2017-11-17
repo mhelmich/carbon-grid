@@ -25,6 +25,7 @@ import java.net.InetSocketAddress;
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Deprecated
 class NodeRegistry implements Closeable {
     private final ConcurrentHashMap<Short, PeerNode> nodeIdToPeer = new ConcurrentHashMap<>(128, .75f, 2);
 

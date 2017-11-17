@@ -39,10 +39,10 @@ public class CacheTest {
         try (InternalCacheImpl internalCache1 = new InternalCacheImpl(node1, port1)) {
             try (InternalCacheImpl internalCache2 = new InternalCacheImpl(node2, port2)) {
                 internalCache1.comms.addPeer(node2, "localhost", port2);
-                internalCache1.comms.addPeer(node1, "localhost", port1);
+                internalCache2.comms.addPeer(node1, "localhost", port1);
 
-                Message.GET get = new Message.GET(node2, 999L);
-                Future<Void> f1 = internalCache1.comms.send(get);
+                Message.GET get = new Message.GET(node1, 999L);
+                Future<Void> f1 = internalCache1.comms.send(internalCache2.myNodeId, get);
                 f1.get();
                 assertTrue(f1.isDone());
             }
