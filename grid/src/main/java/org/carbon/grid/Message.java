@@ -400,4 +400,78 @@ abstract class Message implements Persistable {
         }
     }
 
+    static class INV extends Request {
+        long lineId;
+
+        INV() {
+            super(MessageType.INVALIDATE, (short)-1);
+        }
+
+        INV(long lineId, short nodeId) {
+            super(MessageType.INVALIDATE, nodeId);
+            this.lineId = lineId;
+        }
+
+        @Override
+        int calcByteSize() {
+            return super.calcByteSize()
+                    + 8 // line id long
+                    ;
+        }
+
+        @Override
+        public void write(MessageOutput out) throws IOException {
+            super.write(out);
+            out.writeLong(lineId);
+        }
+
+        @Override
+        public void read(MessageInput in) throws IOException {
+            super.read(in);
+            lineId = in.readLong();
+        }
+
+        @Override
+        Message copy() {
+            return new INV(lineId, super.sender);
+        }
+    }
+
+    static class INVACK extends Response {
+        long lineId;
+
+        INVACK() {
+            super(MessageType.INVALIDATE_ACK);
+        }
+
+        INVACK(long lineId, Request inResponseTo, short sender) {
+            super(MessageType.INVALIDATE_ACK, inResponseTo, sender);
+            this.lineId = lineId;
+        }
+
+        @Override
+        int calcByteSize() {
+            return super.calcByteSize()
+                    + 8 // line id long
+                    ;
+        }
+
+        @Override
+        public void write(MessageOutput out) throws IOException {
+            super.write(out);
+            out.writeLong(lineId);
+        }
+
+        @Override
+        public void read(MessageInput in) throws IOException {
+            super.read(in);
+            lineId = in.readLong();
+        }
+
+        @Override
+        Message copy() {
+            return null;
+        }
+    }
+
 }

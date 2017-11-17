@@ -110,6 +110,10 @@ class CacheLine {
         sharers.add(newSharer);
     }
 
+    void removeSharer(short sharer) {
+        sharers.remove(sharer);
+    }
+
     Set<Short> getSharers() {
         return sharers == null ? Collections.emptySet() : sharers;
     }

@@ -92,6 +92,9 @@ class InternalCacheImpl implements InternalCache, Closeable {
             case PUTX:
                 handlePUTX((Message.PUTX)response);
                 return;
+            case INVALIDATE_ACK:
+                handleINVACK((Message.INVACK)response);
+                return;
             default:
                 throw new RuntimeException("Unknown type " + response.type);
         }
@@ -110,6 +113,8 @@ class InternalCacheImpl implements InternalCache, Closeable {
                 return handleGET((Message.GET)request);
             case GETX:
                 return handleGETX((Message.GETX)request);
+            case INVALIDATE:
+                return handleINV((Message.INV)request);
             default:
                 throw new RuntimeException("Unknown type " + request.type);
         }
@@ -215,6 +220,26 @@ class InternalCacheImpl implements InternalCache, Closeable {
         shared.put(line.getId(), line);
     }
 
+    private Message.Response handleINV(Message.INV inv) {
+        CacheLine line = shared.get(inv.lineId);
+        if (line != null) {
+            // we're in luck I know the line
+            line.setState(CacheLineState.INVALID);
+            line.setOwner(inv.sender);
+        }
+        return new Message.INVACK(inv.lineId, inv, myNodeId);
+    }
+
+    private void handleINVACK(Message.INVACK invack) {
+        CacheLine line = owned.get(invack.lineId);
+        if (line != null) {
+            line.removeSharer(invack.sender);
+            if (line.getSharers().isEmpty()) {
+                line.setState(CacheLineState.EXCLUSIVE);
+            }
+        }
+    }
+
     // TODO -- this needs more work obviously
     private long nextClusterUniqueCacheLineId() {
         long newId = random.nextLong();
@@ -303,8 +328,8 @@ class InternalCacheImpl implements InternalCache, Closeable {
 
     private CacheLine getxLineRemotely(long lineId) throws IOException {
         CacheLine line = getLineLocally(lineId);
-        Message.GETX getx = new Message.GETX(myNodeId, lineId);
         if (line != null) {
+            Message.GETX getx = new Message.GETX(myNodeId, lineId);
             try {
                 comms.send(line.getOwner(), getx).get(TIMEOUT_SECS, TimeUnit.SECONDS);
             } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
@@ -312,15 +337,40 @@ class InternalCacheImpl implements InternalCache, Closeable {
             }
             return getLineLocally(lineId);
         } else {
+            // TODO -- handle the case when we don't know about a line
+            // broadcast your way out of this one
             return null;
         }
     }
 
     private CacheLine getLineRemotely(long lineId) throws IOException {
-        Message.GET get = new Message.GET(comms.myNodeId, lineId);
-        // TODO -- make it so that broadcasts only wait for the minimum number of relevant messages
-        // as opposed to for all outstanding messages regardless of whether they are relevant or not
+        // it might be worth checking the shared map to see whether
+        // we find a stub but the line is invalid
+        CacheLine line = shared.get(lineId);
+        if (line != null) {
+            // AHA!!
+            return getLineRemotelyUnicast(line);
+        } else {
+            // nope we don't know anything
+            // we gotta find out where this thing is first
+            return getLineRemotelyBroadcast(lineId);
+        }
+    }
+
+    private CacheLine getLineRemotelyUnicast(CacheLine line) throws IOException {
+        Message.GET get = new Message.GET(comms.myNodeId, line.getId());
         try {
+            comms.send(line.getOwner(), get).get(TIMEOUT_SECS, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
+            throw new IOException(xcp);
+        }
+        return getLineLocally(line.getId());
+    }
+
+    private CacheLine getLineRemotelyBroadcast(long lineId) throws IOException {
+        Message.GET get = new Message.GET(comms.myNodeId, lineId);
+        try {
+            // TODO -- make it so that broadcasts only wait for the minimum number of relevant messages
             comms.broadcast(get).get(TIMEOUT_SECS, TimeUnit.SECONDS);
         } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
             throw new IOException(xcp);
@@ -328,8 +378,20 @@ class InternalCacheImpl implements InternalCache, Closeable {
         return getLineLocally(lineId);
     }
 
+    // this method will return null even if we know about the line
+    // but can't use it
+    private CacheLine getLineLocally(long lineId) {
+        CacheLine line = innerGetLineLocally(lineId);
+        if (line != null && CacheLineState.INVALID.equals(line.getState())) {
+            // if this line is marked invalid, pretend we don't know it :)
+            return null;
+        } else {
+            return line;
+        }
+    }
+
     // visible for testing
-    CacheLine getLineLocally(long lineId) {
+    CacheLine innerGetLineLocally(long lineId) {
         CacheLine line = owned.get(lineId);
         if (line == null) {
             line = shared.get(lineId);
