@@ -42,6 +42,8 @@ import java.util.concurrent.TimeoutException;
  * http://blog.paralleluniverse.co/2012/08/03/galaxy-internals-part-2/
  * http://blog.paralleluniverse.co/2012/08/09/galaxy-internals-part-3/
  *
+ * http://developer.amd.com/wordpress/media/2012/10/24593_APM_v21.pdf
+ *
  * ToDo List:
  * -  XXX basic message passing and marshalling logic
  * - build netty encoders and decoders
@@ -121,6 +123,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     private Message.Response handleGETX(Message.GETX getx) {
+        logger.info("cache handler {} getx: {}", this, getx);
         CacheLine line = owned.remove(getx.lineId);
         if (line != null) {
             // I'm the owner
@@ -155,7 +158,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     private Message.Response handleGET(Message.GET get) {
-        logger.info("cache handler get: {}", get);
+        logger.info("cache handler {} get: {}", this, get);
         CacheLine line = owned.get(get.lineId);
         if (line != null) {
             line.addSharer(get.sender);
@@ -167,7 +170,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
                 // let's see whether I find the line
                 // in the sharer map and see who the new owner is
                 // todo: send owner changed
-                return null;
+                return new Message.ACK(get, myNodeId);
             } else {
                 // I don't know this cache line at all
                 // looks like I'm part of a desperate broadcast
@@ -178,19 +181,20 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     private void handleACK(Message.ACK ack) {
-        logger.info("cache handler ack: {}", ack);
+        logger.info("cache handler {} ack: {}", this, ack);
     }
 
     private void handlePUTX(Message.PUTX putx) {
+        logger.info("cache handler {} putx: {}", this, putx);
         final CacheLine oldLine = shared.get(putx.lineId);
         if (oldLine == null) {
             // looks like I didn't have this log line before
             // pure luxury, I can create a brand new object
             CacheLine newLine = new CacheLine(putx.lineId, putx.version, myNodeId, putx.data);
-            for (short s : putx.sharers) {
-                newLine.addSharer(s);
-            }
-            newLine.setState(CacheLineState.OWNED);
+            newLine.setSharers(putx.sharers);
+            newLine.setState(
+                    newLine.getSharers().isEmpty() ? CacheLineState.EXCLUSIVE : CacheLineState.OWNED
+            );
             owned.put(putx.lineId, newLine);
         } else {
             // promote line from shared to owned
@@ -200,8 +204,10 @@ class InternalCacheImpl implements InternalCache, Closeable {
             // waiting to grab a lock on this line.
             // If we switch the objects under the waiters all hell will break loose.
             oldLine.setOwner(myNodeId);
-            oldLine.setState(CacheLineState.OWNED);
             oldLine.setSharers(putx.sharers);
+            oldLine.setState(
+                    oldLine.getSharers().isEmpty() ? CacheLineState.EXCLUSIVE : CacheLineState.OWNED
+            );
             oldLine.setData(putx.data);
             oldLine.setVersion(putx.version);
             // I rather live with double-occurrence than the line not
@@ -212,6 +218,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     private void handlePUT(Message.PUT put) {
+        logger.info("cache handler {} put: {}", this, put);
         // this is fairly straight forward
         // just take the new data and shove it in
         // TODO -- make sure we're keeping the same object around (mostly for locking reasons)
@@ -221,6 +228,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     private Message.Response handleINV(Message.INV inv) {
+        logger.info("cache handler {} inv: {}", this, inv);
         CacheLine line = shared.get(inv.lineId);
         if (line != null) {
             // we're in luck I know the line
@@ -231,6 +239,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     private void handleINVACK(Message.INVACK invack) {
+        logger.info("cache handler {} invack: {}", this, invack);
         CacheLine line = owned.get(invack.lineId);
         if (line != null) {
             line.removeSharer(invack.sender);
@@ -327,55 +336,47 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     private CacheLine getxLineRemotely(long lineId) throws IOException {
+        Message.GETX getx = new Message.GETX(myNodeId, lineId);
         CacheLine line = getLineLocally(lineId);
         if (line != null) {
-            Message.GETX getx = new Message.GETX(myNodeId, lineId);
-            try {
-                comms.send(line.getOwner(), getx).get(TIMEOUT_SECS, TimeUnit.SECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
-                throw new IOException(xcp);
-            }
-            return getLineLocally(lineId);
+            innerUnicast(line.getOwner(), getx);
         } else {
-            // TODO -- handle the case when we don't know about a line
-            // broadcast your way out of this one
-            return null;
+            innerBroadcast(getx);
         }
+        return getLineLocally(lineId);
     }
 
     private CacheLine getLineRemotely(long lineId) throws IOException {
         // it might be worth checking the shared map to see whether
         // we find a stub but the line is invalid
+        Message.GET get = new Message.GET(comms.myNodeId, lineId);
         CacheLine line = shared.get(lineId);
         if (line != null) {
             // AHA!!
-            return getLineRemotelyUnicast(line);
+            innerUnicast(line.getOwner(), get);
         } else {
             // nope we don't know anything
             // we gotta find out where this thing is first
-            return getLineRemotelyBroadcast(lineId);
-        }
-    }
-
-    private CacheLine getLineRemotelyUnicast(CacheLine line) throws IOException {
-        Message.GET get = new Message.GET(comms.myNodeId, line.getId());
-        try {
-            comms.send(line.getOwner(), get).get(TIMEOUT_SECS, TimeUnit.SECONDS);
-        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
-            throw new IOException(xcp);
-        }
-        return getLineLocally(line.getId());
-    }
-
-    private CacheLine getLineRemotelyBroadcast(long lineId) throws IOException {
-        Message.GET get = new Message.GET(comms.myNodeId, lineId);
-        try {
-            // TODO -- make it so that broadcasts only wait for the minimum number of relevant messages
-            comms.broadcast(get).get(TIMEOUT_SECS, TimeUnit.SECONDS);
-        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
-            throw new IOException(xcp);
+            innerBroadcast(get);
         }
         return getLineLocally(lineId);
+    }
+
+    private void innerUnicast(short nodeToSendTo, Message msgToSend) throws IOException {
+        try {
+            comms.send(nodeToSendTo, msgToSend).get(TIMEOUT_SECS, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
+            throw new IOException(xcp);
+        }
+    }
+
+    private void innerBroadcast(Message msgToSend) throws IOException {
+        try {
+            // TODO -- make it so that broadcasts only wait for the minimum number of relevant messages
+            comms.broadcast(msgToSend).get(TIMEOUT_SECS, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
+            throw new IOException(xcp);
+        }
     }
 
     // this method will return null even if we know about the line
@@ -402,5 +403,10 @@ class InternalCacheImpl implements InternalCache, Closeable {
     @Override
     public void close() throws IOException {
         comms.close();
+    }
+
+    @Override
+    public String toString() {
+        return "myNodeId: " + myNodeId;
     }
 }

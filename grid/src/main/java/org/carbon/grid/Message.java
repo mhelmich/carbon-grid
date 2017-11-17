@@ -362,7 +362,7 @@ abstract class Message implements Persistable {
                     + 8                    // line id long
                     + 4                    // version number int
                     + 2                    // num sharers short
-                    + (2 * sharers.size()) //
+                    + (2 * sharers.size()) // all sharer shorts
                     + 4                    // bytebuf size
                     + data.capacity();     // buffer content
         }

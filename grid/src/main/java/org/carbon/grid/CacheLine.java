@@ -46,6 +46,8 @@ class CacheLine {
     }
 
     void setState(CacheLineState state) {
+        // TODO -- if the state is set to INVALID
+        // I could go and aggressively purge data to free up memory
         this.state = state;
     }
 
@@ -100,18 +102,16 @@ class CacheLine {
 
     void addSharer(short newSharer) {
         if (sharers == null) {
-            synchronized (this) {
-                if (sharers == null) {
-                    sharers = new NonBlockingHashSet<>();
-                }
-            }
+            sharers = new NonBlockingHashSet<>();
         }
-
         sharers.add(newSharer);
     }
 
     void removeSharer(short sharer) {
         sharers.remove(sharer);
+        if (sharers.isEmpty()) {
+            sharers = null;
+        }
     }
 
     Set<Short> getSharers() {
@@ -124,7 +124,7 @@ class CacheLine {
 
     @Override
     public String toString() {
-        return "id: " + id + " state: " + state + " owner: " + owner + " data size: " + data.capacity();
+        return "id: " + id + " state: " + state + " owner: " + owner + " sharers: " + sharers + " data size: " + data.capacity();
     }
 
     void lock() {
