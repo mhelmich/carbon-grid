@@ -62,12 +62,12 @@ class UdpGridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
                 }
 
                 ctx.writeAndFlush(new DatagramPacket(outBites, packet.sender()));
-                setLastAckedMsgForNode.accept(request.sender, request.messageId);
+                setLastAckedMsgForNode.accept(request.getSender(), request.getMessageId());
             }
         } else {
-            logger.info("dropped message with id {} because ids have a gap", request.messageId);
+            logger.info("dropped message with id {} because ids have a gap", request.getMessageId());
             // drop and resend last acked messageId + 1
-            requestResend(ctx, getLastAckedMsgForNode.apply(request.sender) + 1, packet.sender());
+            requestResend(ctx, getLastAckedMsgForNode.apply(request.getSender()) + 1, packet.sender());
         }
     }
 
@@ -81,12 +81,12 @@ class UdpGridServerHandler extends SimpleChannelInboundHandler<DatagramPacket> {
     }
 
     private boolean shouldHandleMessage(Message.Request request) {
-        Integer lastAckedMessageId = getLastAckedMsgForNode.apply(request.sender);
+        Integer lastAckedMessageId = getLastAckedMsgForNode.apply(request.getSender());
         if (lastAckedMessageId == null) {
             return true;
         }
 
-        return isNext(lastAckedMessageId, request.messageId);
+        return isNext(lastAckedMessageId, request.getMessageId());
     }
 
     private boolean isNext(int lastAckedMessageId, int receivedMessageId) {

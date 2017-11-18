@@ -88,21 +88,21 @@ class GridCommunications implements Closeable {
 
     Future<Void> send(short toNode, Message msg) throws IOException {
         TcpGridClient client = nodeIdToClient.get(toNode);
-        if (client == null) throw new RuntimeException("couldn't find client for node " + toNode + " and can't answer message " + msg.messageId);
+        if (client == null) throw new RuntimeException("couldn't find client for node " + toNode + " and can't answer message " + msg.getMessageId());
 
         CountDownLatchFuture latch = new CountDownLatchFuture();
         // generate message id
         // (relative) uniqueness is enough
         // this is not a sequence number that guarantees full ordering and no gaps
-        msg.messageId = generateNextMessageId();
+        msg.setMessageId(generateNextMessageId());
         // do bookkeeping in order to be able to track the response
-        messageIdToLatchAndMessage.put(msg.messageId, new LatchAndMessage(latch, msg));
+        messageIdToLatchAndMessage.put(msg.getMessageId(), new LatchAndMessage(latch, msg));
         try {
             client.send(msg);
         } catch (IOException xcp) {
             // clean up in the map
             // otherwise we will collect a ton of dead wood over time
-            messageIdToLatchAndMessage.remove(msg.messageId);
+            messageIdToLatchAndMessage.remove(msg.getMessageId());
             throw xcp;
         }
         return latch;
@@ -124,7 +124,7 @@ class GridCommunications implements Closeable {
     // ASYNC CALLBACK FROM NETTY
     private void sendResponseCallback(short nodeId, Message msg) {
         TcpGridClient client = nodeIdToClient.get(nodeId);
-        if (client == null) throw new RuntimeException("couldn't find client for node " + nodeId + " and can't answer message " + msg.messageId);
+        if (client == null) throw new RuntimeException("couldn't find client for node " + nodeId + " and can't answer message " + msg.getMessageId());
         try {
             client.send(msg);
         } catch (IOException xcp) {

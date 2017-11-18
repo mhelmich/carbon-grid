@@ -148,9 +148,9 @@ class OrderPreservingUdpGridClient extends AbstractClient {
     // and I can't disagree but I deem this fine for now
 
     private synchronized void queueUpMessage(Message msg, CountDownLatchFuture latch) {
-        msg.messageId = generateNextMessageId();
-        messageIdToLatchAndMessage.put(msg.messageId, new LatchAndMessage(latch, msg));
-        messageIdsToSend.offer(msg.messageId);
+        msg.setMessageId(generateNextMessageId());
+        messageIdToLatchAndMessage.put(msg.getMessageId(), new LatchAndMessage(latch, msg));
+        messageIdsToSend.offer(msg.getMessageId());
     }
 
     // nullable

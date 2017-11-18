@@ -48,12 +48,12 @@ class UdpGridClientHandler extends SimpleChannelInboundHandler<DatagramPacket> {
             response.read(in);
         }
 
-        logger.info("Received message type: {} messageId {}", messageType, response.messageId);
+        logger.info("Received message type: {} messageId {}", messageType, response.getMessageId());
         internalCache.handleResponse(response);
         if (Message.MessageType.RESEND.equals(response.type)) {
-            messageResendCallback.accept(response.messageId);
+            messageResendCallback.accept(response.getMessageId());
         } else {
-            messageAckCallback.accept(response.messageId);
+            messageAckCallback.accept(response.getMessageId());
         }
     }
 }

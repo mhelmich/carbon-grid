@@ -136,12 +136,12 @@ class InternalCacheImpl implements InternalCache, Closeable {
 
             // change local status and status of cache line
             line.setState(CacheLineState.INVALID);
-            line.setOwner(getx.sender);
+            line.setOwner(getx.getSender());
             line.clearSharers();
             shared.put(getx.lineId, line);
 
             // massage sharers list
-            sharersToSend.remove(getx.sender);
+            sharersToSend.remove(getx.getSender());
             sharersToSend.remove(myNodeId);
 
             // compose message
@@ -168,7 +168,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
         logger.info("cache handler {} get: {}", this, get);
         CacheLine line = owned.get(get.lineId);
         if (line != null) {
-            line.addSharer(get.sender);
+            line.addSharer(get.getSender());
             return new Message.PUT(get, myNodeId, get.lineId, line.getVersion(), line.resetReaderAndGetReadOnlyData());
         } else {
             line = shared.get(get.lineId);
@@ -228,7 +228,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
         // this is fairly straight forward
         // just take the new data and shove it in
         // TODO -- make sure we're keeping the same object around (mostly for locking reasons)
-        CacheLine line = new CacheLine(put.lineId, put.version, put.sender, put.data);
+        CacheLine line = new CacheLine(put.lineId, put.version, put.getSender(), put.data);
         line.setState(CacheLineState.SHARED);
         shared.put(line.getId(), line);
     }
@@ -239,7 +239,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
         if (line != null) {
             // we're in luck I know the line
             line.setState(CacheLineState.INVALID);
-            line.setOwner(inv.sender);
+            line.setOwner(inv.getSender());
         }
         return new Message.INVACK(inv.lineId, inv, myNodeId);
     }
@@ -248,7 +248,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
         logger.info("cache handler {} invack: {}", this, invack);
         CacheLine line = owned.get(invack.lineId);
         if (line != null) {
-            line.removeSharer(invack.sender);
+            line.removeSharer(invack.getSender());
             if (line.getSharers().isEmpty()) {
                 line.setState(CacheLineState.EXCLUSIVE);
             }

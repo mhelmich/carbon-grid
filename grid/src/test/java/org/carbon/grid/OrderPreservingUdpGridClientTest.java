@@ -74,19 +74,19 @@ public class OrderPreservingUdpGridClientTest {
             assertFalse(f2.isDone());
             assertFalse(f3.isDone());
 
-            client.ackResponseCallback(m1.messageId);
+            client.ackResponseCallback(m1.getMessageId());
             assertEquals(1, mq.size());
             assertTrue(f1.isDone());
             assertFalse(f2.isDone());
             assertFalse(f3.isDone());
 
-            client.ackResponseCallback(m2.messageId);
+            client.ackResponseCallback(m2.getMessageId());
             assertEquals(0, mq.size());
             assertTrue(f1.isDone());
             assertTrue(f2.isDone());
             assertFalse(f3.isDone());
 
-            client.ackResponseCallback(m3.messageId);
+            client.ackResponseCallback(m3.getMessageId());
             assertEquals(0, mq.size());
             assertTrue(f1.isDone());
             assertTrue(f2.isDone());

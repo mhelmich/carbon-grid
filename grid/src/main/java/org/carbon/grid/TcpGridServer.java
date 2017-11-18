@@ -108,7 +108,7 @@ class TcpGridServer extends AbstractServer {
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, Message.Response response) throws Exception {
             internalCache.handleResponse(response);
-            ackMessageCallBack.accept(response.messageId);
+            ackMessageCallBack.accept(response.getMessageId());
         }
 
         @Override
@@ -138,7 +138,7 @@ class TcpGridServer extends AbstractServer {
             Message.Response response = internalCache.handleRequest(request);
             // in case we don't have anything to say, let's save us the trouble
             if (response != null) {
-                sendMessageCallback.accept(request.sender, response);
+                sendMessageCallback.accept(request.getSender(), response);
             }
         }
 

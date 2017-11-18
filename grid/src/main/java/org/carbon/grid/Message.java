@@ -110,11 +110,11 @@ abstract class Message implements Persistable {
     }
 
     final MessageType type;
-    int messageId;
-    short sender;
+    private int messageId;
+    private short sender;
 
     private Message(MessageType type, Request inResponseTo, short sender) {
-        this(type, inResponseTo.messageId, sender);
+        this(type, inResponseTo.getMessageId(), sender);
     }
 
     private Message(MessageType type) {
@@ -130,6 +130,18 @@ abstract class Message implements Persistable {
         this.type = type;
         this.messageId = messageId;
         this.sender = sender;
+    }
+
+    short getSender() {
+        return sender;
+    }
+
+    int getMessageId() {
+        return messageId;
+    }
+
+    void setMessageId(int messageId) {
+        this.messageId = messageId;
     }
 
     @Override
@@ -223,7 +235,7 @@ abstract class Message implements Persistable {
 
         @Override
         Message copy() {
-            return new GET(this.sender, lineId);
+            return new GET(this.getSender(), lineId);
         }
     }
 
@@ -433,7 +445,7 @@ abstract class Message implements Persistable {
 
         @Override
         Message copy() {
-            return new INV(lineId, super.sender);
+            return new INV(lineId, super.getSender());
         }
     }
 
