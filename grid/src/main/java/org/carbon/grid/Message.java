@@ -78,6 +78,8 @@ abstract class Message implements Persistable {
                 return new GET();
             case GETX:
                 return new GETX();
+            case OWNER_CHANGED:
+                return new OWNER_CHANGED();
             default:
                 throw new IllegalArgumentException("Unknown type " + type);
         }
