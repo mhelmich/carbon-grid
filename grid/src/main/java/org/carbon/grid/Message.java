@@ -474,4 +474,41 @@ abstract class Message implements Persistable {
         }
     }
 
+    static class OWNER_CHANGED extends Response {
+        short newOwner;
+
+        OWNER_CHANGED() {
+            super(MessageType.OWNER_CHANGED);
+        }
+
+        OWNER_CHANGED(short newOwner, Request inResponseTo, short sender) {
+            super(MessageType.OWNER_CHANGED, inResponseTo, sender);
+            this.newOwner = newOwner;
+        }
+
+        @Override
+        int calcByteSize() {
+            return super.calcByteSize()
+                    + 2 // new owner short
+                    ;
+        }
+
+        @Override
+        public void write(MessageOutput out) throws IOException {
+            super.write(out);
+            out.writeShort(newOwner);
+        }
+
+        @Override
+        public void read(MessageInput in) throws IOException {
+            super.read(in);
+            newOwner = in.readShort();
+        }
+
+        @Override
+        Message copy() {
+            throw new NotImplementedException();
+        }
+    }
+
 }

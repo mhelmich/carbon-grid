@@ -97,6 +97,9 @@ class InternalCacheImpl implements InternalCache, Closeable {
             case INVALIDATE_ACK:
                 handleINVACK((Message.INVACK)response);
                 return;
+            case OWNER_CHANGED:
+                handleOWNER_CHANGED((Message.OWNER_CHANGED)response);
+                return;
             default:
                 throw new RuntimeException("Unknown type " + response.type);
         }
@@ -152,8 +155,12 @@ class InternalCacheImpl implements InternalCache, Closeable {
             // I'm not the owner
             // let's see whether I find the line
             // in the sharer map and see who the new owner is
-            // todo: send owner changed
-            return null;
+            line = shared.get(getx.lineId);
+            if (line == null) {
+                return new Message.ACK(getx, myNodeId);
+            } else {
+                return new Message.OWNER_CHANGED(line.getOwner(), getx, myNodeId);
+            }
         }
     }
 
@@ -169,8 +176,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
                 // I'm not the owner
                 // let's see whether I find the line
                 // in the sharer map and see who the new owner is
-                // todo: send owner changed
-                return new Message.ACK(get, myNodeId);
+                return new Message.OWNER_CHANGED(line.getOwner(), get, myNodeId);
             } else {
                 // I don't know this cache line at all
                 // looks like I'm part of a desperate broadcast
@@ -247,6 +253,10 @@ class InternalCacheImpl implements InternalCache, Closeable {
                 line.setState(CacheLineState.EXCLUSIVE);
             }
         }
+    }
+
+    private void handleOWNER_CHANGED(Message.OWNER_CHANGED ownerChanged) {
+        logger.info("cache handler {} ownerChanged: {}", this, ownerChanged);
     }
 
     // TODO -- this needs more work obviously
