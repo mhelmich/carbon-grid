@@ -29,7 +29,6 @@ import java.net.InetSocketAddress;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * This class handles message passing between nodes.
@@ -49,10 +48,10 @@ class GridCommunications implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(GridCommunications.class);
     private final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
+    private final SequenceGenerator seqGen = new SequenceGenerator();
 
     private final NonBlockingHashMap<Integer, LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMap<>();
     private final NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient = new NonBlockingHashMap<>();
-    private final AtomicInteger messageIdGenerator = new AtomicInteger(Integer.MIN_VALUE);
 
     final short myNodeId;
     private final int myServerPort;
@@ -70,7 +69,8 @@ class GridCommunications implements Closeable {
                 port,
                 bossGroup,
                 workerGroup,
-                internalCache,
+                this::handleRequest,
+                this::handleResponse,
                 this::ackResponseCallback,
                 this::sendResponseCallback
         );
@@ -88,21 +88,21 @@ class GridCommunications implements Closeable {
 
     Future<Void> send(short toNode, Message msg) throws IOException {
         TcpGridClient client = nodeIdToClient.get(toNode);
-        if (client == null) throw new RuntimeException("couldn't find client for node " + toNode + " and can't answer message " + msg.getMessageId());
+        if (client == null) throw new RuntimeException("couldn't find client for node " + toNode + " and can't answer message " + msg.getMessageSequenceNumber());
 
         CountDownLatchFuture latch = new CountDownLatchFuture();
         // generate message id
         // (relative) uniqueness is enough
         // this is not a sequence number that guarantees full ordering and no gaps
-        msg.setMessageId(generateNextMessageId());
+        msg.setMessageSequenceNumber(nextSequenceId(msg.getSender()));
         // do bookkeeping in order to be able to track the response
-        messageIdToLatchAndMessage.put(msg.getMessageId(), new LatchAndMessage(latch, msg));
+        messageIdToLatchAndMessage.put(msg.getMessageSequenceNumber(), new LatchAndMessage(latch, msg));
         try {
             client.send(msg);
         } catch (IOException xcp) {
             // clean up in the map
             // otherwise we will collect a ton of dead wood over time
-            messageIdToLatchAndMessage.remove(msg.getMessageId());
+            messageIdToLatchAndMessage.remove(msg.getMessageSequenceNumber());
             throw xcp;
         }
         return latch;
@@ -124,7 +124,7 @@ class GridCommunications implements Closeable {
     // ASYNC CALLBACK FROM NETTY
     private void sendResponseCallback(short nodeId, Message msg) {
         TcpGridClient client = nodeIdToClient.get(nodeId);
-        if (client == null) throw new RuntimeException("couldn't find client for node " + nodeId + " and can't answer message " + msg.getMessageId());
+        if (client == null) throw new RuntimeException("couldn't find client for node " + nodeId + " and can't answer message " + msg.getMessageSequenceNumber());
         try {
             client.send(msg);
         } catch (IOException xcp) {
@@ -146,19 +146,24 @@ class GridCommunications implements Closeable {
         }
     }
 
-    // this is just an id ... not a sequence number anymore
-    private int generateNextMessageId() {
-        int newId = messageIdGenerator.incrementAndGet();
-        if (newId == Integer.MAX_VALUE) {
-            // the only way the value cannot be "current" is when a different
-            // thread swept in and "incremented" the integer
-            // and since the only way the int can be incremented from here
-            // is flowing over, the result is irrelevant to us
-            messageIdGenerator.compareAndSet(newId, Integer.MIN_VALUE);
-        }
+    ////////////////////////////////////////////
+    ///////////////////////////////////
+    /////////////////////////////
+    // ASYNC CALLBACK FROM NETTY
+    private Message.Response handleRequest(Message.Request request) {
+        return internalCache.handleRequest(request);
+    }
 
-        // this also means newId is never MIN_VALUE
-        return newId;
+    ////////////////////////////////////////////
+    ///////////////////////////////////
+    /////////////////////////////
+    // ASYNC CALLBACK FROM NETTY
+    private void handleResponse(Message.Response response) {
+        internalCache.handleResponse(response);
+    }
+
+    private int nextSequenceId(short nodeId) {
+        return seqGen.next(nodeId);
     }
 
     private void closeQuietly(Closeable closeable) {

@@ -17,259 +17,130 @@
 package org.carbon.grid;
 
 import io.netty.buffer.ByteBuf;
+import org.cliffc.high_scale_lib.NonBlockingHashSet;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
 abstract class Message implements Persistable {
 
-    // NEVER CHANGE THE ORDINALS!!!
-    // first parameter is the ordinal
-    // the second parameter is the message byte size after reading the first type byte
-    enum MessageType {
-        PUT((byte)0),
-        GET((byte)1),
-        ACK((byte)2),
-        INVALIDATE((byte)3),
-        INVALIDATE_ACK((byte)4),
-        BACKUP((byte)5),
-        BACUP_ACK((byte)6),
-        RESEND((byte)7),
-        GETX((byte)8),
-        PUTX((byte)9),
-        OWNER_CHANGED((byte)10)
-        ;
-
-        private final static Map<Byte, MessageType> byteToType = new HashMap<>(MessageType.values().length);
-        static {
-            Set<Byte> ordinals = new HashSet<>(MessageType.values().length);
-            for (MessageType type : MessageType.values()) {
-                byteToType.put(type.ordinal, type);
-
-                if (!ordinals.add(type.ordinal)) {
-                    throw new RuntimeException("Can't add ordinal " + type.ordinal + " twice!");
-                }
-            }
-        }
-
-        final byte ordinal;
-        MessageType(byte ordinal) {
-            this.ordinal = ordinal;
-        }
-
-        static MessageType fromByte(byte b) {
-            return byteToType.get(b);
-        }
-    }
-
-    static Message getMessageForType(MessageType type) {
-        switch (type) {
-            case ACK:
-                return new ACK();
-            case PUT:
-                return new PUT();
-            case PUTX:
-                return new PUTX();
-            case GET:
-                return new GET();
-            case GETX:
-                return new GETX();
-            case OWNER_CHANGED:
-                return new OWNER_CHANGED();
-            default:
-                throw new IllegalArgumentException("Unknown type " + type);
-        }
-    }
-
-    @Deprecated
-    static Response getResponseForType(MessageType type) {
-        switch (type) {
-            case ACK:
-                return new ACK();
-            case PUT:
-                return new PUT();
-            case PUTX:
-                return new PUTX();
-            default:
-                throw new IllegalArgumentException("Unknown type " + type);
-        }
-    }
-
-    @Deprecated
-    static Request getRequestForType(MessageType type) {
-        switch (type) {
-            case GET:
-                return new GET();
-            case GETX:
-                return new GETX();
-            default:
-                throw new IllegalArgumentException("Unknown type " + type);
-        }
-    }
-
     final MessageType type;
-    private int messageId;
-    private short sender;
+    protected int messageSequenceNumber;
+    protected short sender;
+    protected long lineId;
 
-    private Message(MessageType type, Request inResponseTo, short sender) {
-        this(type, inResponseTo.getMessageId(), sender);
-    }
-
-    private Message(MessageType type) {
+    Message(MessageType type) {
         this.type = type;
     }
 
-    private Message(MessageType type, short sender) {
-        this.type = type;
-        this.sender = sender;
+    @Override
+    public void write(MessageOutput out) throws IOException {
+        out.writeByte(type.ordinal);
+        out.writeInt(messageSequenceNumber);
+        out.writeShort(sender);
+        out.writeLong(lineId);
     }
 
-    private Message(MessageType type, int messageId, short sender) {
-        this.type = type;
-        this.messageId = messageId;
-        this.sender = sender;
+    @Override
+    public void read(MessageInput in) throws IOException {
+        messageSequenceNumber = in.readInt();
+        sender = in.readShort();
+        lineId = in.readLong();
+    }
+
+    @Override
+    public int byteSize() {
+        return calcMessagesByteSize();
+    }
+
+    protected int calcMessagesByteSize() {
+        return 1     // message type byte
+             + 4     // message id int
+             + 2     // sender short
+             + 8     // line id long
+             ;
+    }
+
+    Message copy() {
+        throw new NotImplementedException();
+    }
+
+    int getMessageSequenceNumber() {
+        return messageSequenceNumber;
+    }
+
+    void setMessageSequenceNumber(int messageSequenceNumber) {
+        this.messageSequenceNumber = messageSequenceNumber;
     }
 
     short getSender() {
         return sender;
     }
 
-    int getMessageId() {
-        return messageId;
-    }
-
-    void setMessageId(int messageId) {
-        this.messageId = messageId;
-    }
-
-    @Override
-    public int byteSize() {
-        return calcByteSize();
-    }
-
-    int calcByteSize() {
-        return 1     // message type byte
-             + 4     // message id int
-             + 2     // sender short
-               ;
-    }
-
-    @Override
-    public void write(MessageOutput out) throws IOException {
-        out.writeByte(type.ordinal);
-        out.writeInt(messageId);
-        out.writeShort(sender);
-    }
-
-    @Override
-    public void read(MessageInput in) throws IOException {
-        messageId = in.readInt();
-        sender = in.readShort();
-    }
-
     @Override
     public String toString() {
-        return "message type: " + type + " messageId: " + messageId + " sender: " + sender;
+        return "message type: " + type + " messageSequenceNumber: " + messageSequenceNumber + " sender: " + sender + " lineId: " + lineId;
     }
 
-    abstract Message copy();
-
     static abstract class Request extends Message {
-        private Request(MessageType type, short node) {
-            super(type, node);
+        Request(MessageType type) {
+            super(type);
         }
     }
 
     static abstract class Response extends Message {
-        private Response(MessageType type) {
+        Response(MessageType type) {
             super(type);
-        }
-
-        private Response(MessageType type, Request inResponseTo, short sender) {
-            super(type, inResponseTo, sender);
         }
     }
 
     static class GET extends Request {
-        long lineId;
-
-        GET() {
-            super(MessageType.GET, (short)-1);
+        private GET() {
+            super(MessageType.GET);
         }
 
-        GET(short node, long lineId) {
-            super(MessageType.GET, node);
+        GET(short sender, long lineId) {
+            super(MessageType.GET);
+            this.sender = sender;
             this.lineId = lineId;
         }
 
-        // convenience ctor
-        // I got tired of the constant casting
-        GET(int node, int lineId) {
-            this((short)node, (long)lineId);
-        }
-
         @Override
-        int calcByteSize() {
-            return super.calcByteSize()
-                    + 8; // lineId long
-        }
-
-        @Override
-        public void write(MessageOutput out) throws IOException {
-            super.write(out);
-            out.writeLong(lineId);
-        }
-
-        @Override
-        public void read(MessageInput in) throws IOException {
-            super.read(in);
-            lineId = in.readLong();
-        }
-
-        @Override
-        public String toString() {
-            return super.toString() + " lineId: " + lineId;
-        }
-
-        @Override
-        Message copy() {
-            return new GET(this.getSender(), lineId);
+        GET copy() {
+            return new GET(sender, lineId);
         }
     }
 
     static class PUT extends Response {
-        long lineId;
         int version;
         ByteBuf data;
 
-        PUT() {
+        private PUT() {
             super(MessageType.PUT);
         }
 
-        PUT(Request inResponseTo, short sender, long lineId, int version, ByteBuf data) {
-            super(MessageType.PUT, inResponseTo, sender);
+        PUT(int requestMessageSequenceNumber, short sender, long lineId, int version, ByteBuf data) {
+            super(MessageType.PUT);
+            this.messageSequenceNumber = requestMessageSequenceNumber;
+            this.sender = sender;
             this.lineId = lineId;
             this.version = version;
             this.data = data;
         }
 
         @Override
-        int calcByteSize() {
-            return super.calcByteSize()
-                    + 8                 // line id long
+        public int calcMessagesByteSize() {
+            return super.calcMessagesByteSize()
                     + 4                 // version number int
                     + 4                 // bytebuf size
-                    + data.capacity();  // buffer content
+                    + data.capacity()   // buffer content
+                    ;
         }
 
         @Override
         public void write(MessageOutput out) throws IOException {
             super.write(out);
-            out.writeLong(lineId);
             out.writeInt(version);
             out.writeInt(data.capacity());
             out.writeByteBuf(data.resetReaderIndex());
@@ -278,113 +149,75 @@ abstract class Message implements Persistable {
         @Override
         public void read(MessageInput in) throws IOException {
             super.read(in);
-            lineId = in.readLong();
             version = in.readInt();
             int bytesToRead = in.readInt();
             data = in.readByteBuf(bytesToRead);
         }
-
-        @Override
-        Message copy() {
-            throw new NotImplementedException();
-        }
     }
 
     static class ACK extends Response {
-        ACK(Request inResponseTo, short sender) {
-            super(MessageType.ACK, inResponseTo, sender);
-        }
-
-        ACK() {
+        private ACK() {
             super(MessageType.ACK);
         }
 
-        @Override
-        int calcByteSize() {
-            return super.calcByteSize();
-        }
-
-        @Override
-        public void write(MessageOutput out) throws IOException {
-            super.write(out);
-        }
-
-        @Override
-        public void read(MessageInput in) throws IOException {
-            super.read(in);
-        }
-
-        @Override
-        Message copy() {
-            return new ACK();
+        ACK(int requestMessageSequenceNumber, short sender, long lineId) {
+            super(MessageType.ACK);
+            this.messageSequenceNumber = requestMessageSequenceNumber;
+            this.sender = sender;
+            this.lineId = lineId;
         }
     }
 
     static class GETX extends Request {
-        long lineId;
-
-        GETX() {
-            super(MessageType.GETX, (short)-1);
+        private GETX() {
+            super(MessageType.GETX);
         }
 
-        GETX(short node, long lineId) {
-            super(MessageType.GETX, node);
+        GETX(short sender, long lineId) {
+            super(MessageType.GETX);
+            this.sender = sender;
             this.lineId = lineId;
         }
 
         @Override
-        int calcByteSize() {
-            return super.calcByteSize() + 8;
-        }
-
-        @Override
-        public void write(MessageOutput out) throws IOException {
-            super.write(out);
-            out.writeLong(lineId);
-        }
-
-        @Override
-        public void read(MessageInput in) throws IOException {
-            super.read(in);
-            lineId = in.readLong();
-        }
-
-        @Override
-        Message copy() {
-            throw new NotImplementedException();
+        GETX copy() {
+            return new GETX(sender, lineId);
         }
     }
 
     static class PUTX extends Response {
-        long lineId;
         int version;
-        // variable and potentially unbounded size
         Set<Short> sharers;
         ByteBuf data;
 
-        PUTX() {
+        private PUTX() {
             super(MessageType.PUTX);
         }
 
-        PUTX(Request inResponseTo, short sender) {
-            super(MessageType.PUTX, inResponseTo, sender);
+        PUTX(int requestMessageSequenceNumber, short sender, long lineId, int version, Set<Short> sharers, ByteBuf data) {
+            super(MessageType.PUTX);
+            this.messageSequenceNumber = requestMessageSequenceNumber;
+            this.sender = sender;
+            this.lineId = lineId;
+            this.version = version;
+            this.sharers = sharers;
+            this.data = data;
         }
 
         @Override
-        int calcByteSize() {
-            return super.calcByteSize()
-                    + 8                    // line id long
+        public int calcMessagesByteSize() {
+            return super.calcMessagesByteSize()
                     + 4                    // version number int
                     + 2                    // num sharers short
-                    + (2 * sharers.size()) // all sharer shorts
+                    + (2 * sharers.size()) // all sharers short
                     + 4                    // bytebuf size
-                    + data.capacity();     // buffer content
+                    + data.capacity()      // buffer content
+                    ;
         }
 
         @Override
         public void write(MessageOutput out) throws IOException {
             super.write(out);
-            out.writeLong(lineId);
             out.writeInt(version);
             out.writeShort(sharers.size());
             for (Short s : sharers) {
@@ -397,113 +230,36 @@ abstract class Message implements Persistable {
         @Override
         public void read(MessageInput in) throws IOException {
             super.read(in);
-            lineId = in.readLong();
             version = in.readInt();
             short numSharers = in.readShort();
-            sharers = new HashSet<>(numSharers);
+            sharers = new NonBlockingHashSet<>();
             for (int i = 0; i < numSharers; i++) {
                 sharers.add(in.readShort());
             }
             int bytesToRead = in.readInt();
             data = in.readByteBuf(bytesToRead);
         }
-
-        @Override
-        Message copy() {
-            throw new NotImplementedException();
-        }
-    }
-
-    static class INV extends Request {
-        long lineId;
-
-        INV() {
-            super(MessageType.INVALIDATE, (short)-1);
-        }
-
-        INV(long lineId, short nodeId) {
-            super(MessageType.INVALIDATE, nodeId);
-            this.lineId = lineId;
-        }
-
-        @Override
-        int calcByteSize() {
-            return super.calcByteSize()
-                    + 8 // line id long
-                    ;
-        }
-
-        @Override
-        public void write(MessageOutput out) throws IOException {
-            super.write(out);
-            out.writeLong(lineId);
-        }
-
-        @Override
-        public void read(MessageInput in) throws IOException {
-            super.read(in);
-            lineId = in.readLong();
-        }
-
-        @Override
-        Message copy() {
-            return new INV(lineId, super.getSender());
-        }
-    }
-
-    static class INVACK extends Response {
-        long lineId;
-
-        INVACK() {
-            super(MessageType.INVALIDATE_ACK);
-        }
-
-        INVACK(long lineId, Request inResponseTo, short sender) {
-            super(MessageType.INVALIDATE_ACK, inResponseTo, sender);
-            this.lineId = lineId;
-        }
-
-        @Override
-        int calcByteSize() {
-            return super.calcByteSize()
-                    + 8 // line id long
-                    ;
-        }
-
-        @Override
-        public void write(MessageOutput out) throws IOException {
-            super.write(out);
-            out.writeLong(lineId);
-        }
-
-        @Override
-        public void read(MessageInput in) throws IOException {
-            super.read(in);
-            lineId = in.readLong();
-        }
-
-        @Override
-        Message copy() {
-            throw new NotImplementedException();
-        }
     }
 
     static class OWNER_CHANGED extends Response {
         short newOwner;
 
-        OWNER_CHANGED() {
+        private OWNER_CHANGED() {
             super(MessageType.OWNER_CHANGED);
         }
 
-        OWNER_CHANGED(short newOwner, Request inResponseTo, short sender) {
-            super(MessageType.OWNER_CHANGED, inResponseTo, sender);
+        OWNER_CHANGED(int requestMessageId, short sender, long lineId, short newOwner) {
+            super(MessageType.OWNER_CHANGED);
+            this.messageSequenceNumber = requestMessageId;
+            this.sender = sender;
+            this.lineId = lineId;
             this.newOwner = newOwner;
         }
 
         @Override
-        int calcByteSize() {
-            return super.calcByteSize()
-                    + 2 // new owner short
+        public int calcMessagesByteSize() {
+            return super.calcMessagesByteSize()
+                    + 2       // new owner short
                     ;
         }
 
@@ -518,11 +274,49 @@ abstract class Message implements Persistable {
             super.read(in);
             newOwner = in.readShort();
         }
+    }
 
-        @Override
-        Message copy() {
-            throw new NotImplementedException();
+    static class INV extends Request {
+        private INV() {
+            super(MessageType.INV);
         }
     }
 
+    static class INVACK extends Response {
+        private INVACK() {
+            super(MessageType.INVACK);
+        }
+
+        INVACK(int requestMessageId, short sender, long lineId) {
+            super(MessageType.INVACK);
+            this.messageSequenceNumber = requestMessageId;
+            this.sender = sender;
+            this.lineId = lineId;
+        }
+    }
+
+    static class DeserializationMessageFactory {
+        Message createMessageShellForType(MessageType type) {
+            switch (type) {
+                case ACK:
+                    return new ACK();
+                case PUT:
+                    return new PUT();
+                case PUTX:
+                    return new PUTX();
+                case GET:
+                    return new GET();
+                case GETX:
+                    return new GETX();
+                case OWNER_CHANGED:
+                    return new OWNER_CHANGED();
+                case INV:
+                    return new INV();
+                case INVACK:
+                    return new INVACK();
+                default:
+                    throw new IllegalArgumentException("Unknown type " + type);
+            }
+        }
+    }
 }

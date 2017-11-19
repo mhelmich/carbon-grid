@@ -16,17 +16,22 @@
 
 package org.carbon.grid.netty;
 
-import org.carbon.grid.CacheLine;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 class NettyCacheImpl {
-
+    private final static Logger logger = LoggerFactory.getLogger(NettyCacheImpl.class);
     // the cache lines I own
-    private final NonBlockingHashMapLong<CacheLine> owned = new NonBlockingHashMapLong<>();
+    private final NonBlockingHashMapLong<NettyCacheLine> owned = new NonBlockingHashMapLong<>();
     // the cache lines I'm sharing and somebody else owns
-    private final NonBlockingHashMapLong<CacheLine> shared = new NonBlockingHashMapLong<>();
+    private final NonBlockingHashMapLong<NettyCacheLine> shared = new NonBlockingHashMapLong<>();
 
-    NettyCacheImpl() {
+    final short myNodeId;
+    final GridComm comms;
 
+    NettyCacheImpl(int myNodeId, int myPort) {
+        this.myNodeId = (short)myNodeId;
+        this.comms = new GridCommImpl(myNodeId, myPort, this);
     }
 }

@@ -18,9 +18,12 @@ package org.carbon.grid.netty;
 
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.util.internal.SocketUtils;
+import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Future;
@@ -30,8 +33,25 @@ class GridCommImpl implements GridComm {
     private final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
 
-    public void addPeer(short nodeId, InetSocketAddress addr) {
+    private final NonBlockingHashMap<Integer, LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMap<>();
+    private final NonBlockingHashMap<Short, NettyClient> nodeIdToClient = new NonBlockingHashMap<>();
 
+    final short myNodeId;
+    private final int myServerPort;
+    private final NettyServer server;
+
+    GridCommImpl(int myNodeId, int port, NettyCacheImpl cache) {
+        this.myNodeId = (short)myNodeId;
+        this.myServerPort = port;
+        this.server = new NettyServer(port, bossGroup, workerGroup, cache);
+    }
+
+    public void addPeer(short nodeId, InetSocketAddress addr) {
+        nodeIdToClient.put(nodeId, new NettyClient(nodeId, addr, workerGroup));
+    }
+
+    public void addPeer(short nodeId, String host, int port) {
+        addPeer(nodeId, SocketUtils.socketAddress(host, port));
     }
 
     public Future<Void> send(short toNode, NettyMessage msg) throws IOException {
@@ -44,6 +64,39 @@ class GridCommImpl implements GridComm {
 
     @Override
     public void close() throws IOException {
+        for (NettyClient client : nodeIdToClient.values()) {
+            closeQuietly(client);
+        }
+        closeQuietly(server);
+        bossGroup.shutdownGracefully();
+        workerGroup.shutdownGracefully();
+    }
 
+    private void closeQuietly(Closeable closeable) {
+        if (closeable == null) return;
+        try {
+            closeable.close();
+        } catch (IOException xcp) {
+            logger.error("Error while closing", xcp);
+        }
+    }
+
+    @Override
+    public String toString () {
+        return "myNodeId: " + myNodeId + " myServerPort: " + myServerPort;
+    }
+
+    private static class LatchAndMessage {
+//        final CountDownLatchFuture latch;
+//        final NettyMessage msg;
+//        LatchAndMessage(CountDownLatchFuture latch, NettyMessage msg) {
+//            this.latch = latch;
+//            this.msg = msg;
+//        }
+
+//        @Override
+//        public String toString() {
+//            return "latch: " + latch + " msg: " + msg;
+//        }
     }
 }

@@ -69,6 +69,14 @@ abstract class NettyMessage implements Persistable {
         throw new NotImplementedException();
     }
 
+    int getMessageSequenceNumber() {
+        return messageSequenceNumber;
+    }
+
+    void setMessageSequenceNumber(int messageSequenceNumber) {
+        this.messageSequenceNumber = messageSequenceNumber;
+    }
+
     @Override
     public String toString() {
         return "message type: " + type + " messageSequenceNumber: " + messageSequenceNumber + " sender: " + sender + " lineId: " + lineId;

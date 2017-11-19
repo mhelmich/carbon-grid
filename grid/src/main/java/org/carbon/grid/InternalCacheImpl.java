@@ -94,7 +94,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
             case PUTX:
                 handlePUTX((Message.PUTX)response);
                 return;
-            case INVALIDATE_ACK:
+            case INVACK:
                 handleINVACK((Message.INVACK)response);
                 return;
             case OWNER_CHANGED:
@@ -118,7 +118,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
                 return handleGET((Message.GET)request);
             case GETX:
                 return handleGETX((Message.GETX)request);
-            case INVALIDATE:
+            case INV:
                 return handleINV((Message.INV)request);
             default:
                 throw new RuntimeException("Unknown type " + request.type);
@@ -145,21 +145,23 @@ class InternalCacheImpl implements InternalCache, Closeable {
             sharersToSend.remove(myNodeId);
 
             // compose message
-            Message.PUTX putx = new Message.PUTX(getx, myNodeId);
-            putx.lineId = line.getId();
-            putx.version = line.getVersion();
-            putx.sharers = sharersToSend;
-            putx.data = line.resetReaderAndGetReadOnlyData();
-            return putx;
+            return new Message.PUTX(
+                    getx.getMessageSequenceNumber(),
+                    myNodeId,
+                    line.getId(),
+                    line.getVersion(),
+                    sharersToSend,
+                    line.resetReaderAndGetReadOnlyData()
+            );
         } else {
             // I'm not the owner
             // let's see whether I find the line
             // in the sharer map and see who the new owner is
             line = shared.get(getx.lineId);
             if (line == null) {
-                return new Message.ACK(getx, myNodeId);
+                return new Message.ACK(getx.getMessageSequenceNumber(), myNodeId, getx.lineId);
             } else {
-                return new Message.OWNER_CHANGED(line.getOwner(), getx, myNodeId);
+                return new Message.OWNER_CHANGED(getx.getMessageSequenceNumber(), myNodeId, line.getId(), line.getOwner());
             }
         }
     }
@@ -169,19 +171,33 @@ class InternalCacheImpl implements InternalCache, Closeable {
         CacheLine line = owned.get(get.lineId);
         if (line != null) {
             line.addSharer(get.getSender());
-            return new Message.PUT(get, myNodeId, get.lineId, line.getVersion(), line.resetReaderAndGetReadOnlyData());
+            return new Message.PUT(
+                    get.getMessageSequenceNumber(),
+                    myNodeId,
+                    line.getId(),
+                    line.getVersion(),
+                    line.resetReaderAndGetReadOnlyData());
         } else {
             line = shared.get(get.lineId);
             if (line != null) {
                 // I'm not the owner
                 // let's see whether I find the line
                 // in the sharer map and see who the new owner is
-                return new Message.OWNER_CHANGED(line.getOwner(), get, myNodeId);
+                return new Message.OWNER_CHANGED(
+                        get.getMessageSequenceNumber(),
+                        myNodeId,
+                        line.getId(),
+                        line.getOwner()
+                );
             } else {
                 // I don't know this cache line at all
                 // looks like I'm part of a desperate broadcast
                 // I'll just acknowledge the message and move on with my life
-                return new Message.ACK(get, myNodeId);
+                return new Message.ACK(
+                        get.getMessageSequenceNumber(),
+                        myNodeId,
+                        get.lineId
+                );
             }
         }
     }
@@ -241,7 +257,11 @@ class InternalCacheImpl implements InternalCache, Closeable {
             line.setState(CacheLineState.INVALID);
             line.setOwner(inv.getSender());
         }
-        return new Message.INVACK(inv.lineId, inv, myNodeId);
+        return new Message.INVACK(
+                inv.getMessageSequenceNumber(),
+                myNodeId,
+                inv.lineId
+        );
     }
 
     private void handleINVACK(Message.INVACK invack) {

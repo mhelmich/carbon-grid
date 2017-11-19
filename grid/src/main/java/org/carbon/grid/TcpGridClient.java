@@ -28,6 +28,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.MessageToByteEncoder;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 
@@ -37,16 +38,18 @@ import java.net.InetSocketAddress;
  * or even an inbound handler...because there simply will be no inbound messages.
  * A client is practically a write-only construct.
  */
-class TcpGridClient extends AbstractClient {
+class TcpGridClient implements Closeable {
+    private final short theNodeITalkTo;
+    private final InetSocketAddress addr;
     private final ChannelFuture channelFuture;
     private Channel channel;
 
     TcpGridClient(short theNodeITalkTo, InetSocketAddress addr, EventLoopGroup workerGroup, InternalCache internalCache) {
-        super(theNodeITalkTo, addr);
+        this.theNodeITalkTo = theNodeITalkTo;
+        this.addr = addr;
         channelFuture = createBootstrap(workerGroup, internalCache).connect(addr);
     }
 
-    @Override
     ChannelFuture send(Message msg) throws IOException {
         if (channel == null) {
             synchronized (channelFuture) {
@@ -58,8 +61,7 @@ class TcpGridClient extends AbstractClient {
         return channel.writeAndFlush(msg);
     }
 
-    @Override
-    protected Bootstrap createBootstrap(EventLoopGroup workerGroup, InternalCache internalCache) {
+    private Bootstrap createBootstrap(EventLoopGroup workerGroup, InternalCache internalCache) {
         return new Bootstrap()
                 .group(workerGroup)
                 .channel(NioSocketChannel.class)
@@ -81,10 +83,15 @@ class TcpGridClient extends AbstractClient {
         channelFuture.channel().close();
     }
 
+    @Override
+    public String toString() {
+        return "theNodeITalkTo: " + theNodeITalkTo + " addr: " + addr;
+    }
+
     private static class ResponseEncoder extends MessageToByteEncoder<Message.Response> {
         @Override
         protected ByteBuf allocateBuffer(ChannelHandlerContext ctx, Message.Response msg, boolean preferDirect) throws Exception {
-            return ctx.alloc().ioBuffer(msg.calcByteSize());
+            return ctx.alloc().ioBuffer(msg.calcMessagesByteSize());
         }
 
         @Override
@@ -98,7 +105,7 @@ class TcpGridClient extends AbstractClient {
     private static class RequestEncoder extends MessageToByteEncoder<Message.Request> {
         @Override
         protected ByteBuf allocateBuffer(ChannelHandlerContext ctx, Message.Request msg, boolean preferDirect) throws Exception {
-            return ctx.alloc().ioBuffer(msg.calcByteSize());
+            return ctx.alloc().ioBuffer(msg.calcMessagesByteSize());
         }
 
         @Override

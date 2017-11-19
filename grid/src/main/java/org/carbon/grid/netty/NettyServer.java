@@ -28,15 +28,17 @@ import java.io.IOException;
 
 class NettyServer implements Closeable {
     private final Channel channel;
+    private final NettyCacheImpl cache;
 
-    NettyServer(int port, EventLoopGroup bossGroup, EventLoopGroup workerGroup) {
+    NettyServer(int port, EventLoopGroup bossGroup, EventLoopGroup workerGroup, NettyCacheImpl cache) {
         ServerBootstrap b = createBootstrap(bossGroup, workerGroup);
         channel = b.bind(port).syncUninterruptibly().channel();
+        this.cache = cache;
     }
 
     private ServerBootstrap createBootstrap(EventLoopGroup bossGroup, EventLoopGroup workerGroup) {
         NettyCodecFactory codecFactory = new NettyCodecFactory();
-        NettyHandlerFactory handlerFactory = new NettyHandlerFactory();
+        NettyHandlerFactory handlerFactory = new NettyHandlerFactory(cache);
         return new ServerBootstrap()
                 .group(bossGroup, workerGroup)
                 .channel(NioServerSocketChannel.class)
