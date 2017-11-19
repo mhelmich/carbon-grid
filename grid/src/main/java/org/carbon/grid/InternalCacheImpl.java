@@ -69,7 +69,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     final GridCommunications comms;
     final short myNodeId;
 
-    private final static int TIMEOUT_SECS = 5;
+    private final static int TIMEOUT_SECS = 555;
 
     InternalCacheImpl(int myNodeId, int myPort) {
         this.myNodeId = (short) myNodeId;

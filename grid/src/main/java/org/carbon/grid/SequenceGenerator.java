@@ -17,6 +17,8 @@
 package org.carbon.grid;
 
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -27,7 +29,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * the next message id to process.
  */
 class SequenceGenerator {
-    private final static NonBlockingHashMap<Short, AtomicInteger> nodeIdToSequence = new NonBlockingHashMap<>();
+    private final static Logger logger = LoggerFactory.getLogger(SequenceGenerator.class);
+    private final NonBlockingHashMap<Short, AtomicInteger> nodeIdToSequence = new NonBlockingHashMap<>();
 
     int next(short nodeId) {
         AtomicInteger count = nodeIdToSequence.get(nodeId);
@@ -45,6 +48,7 @@ class SequenceGenerator {
             count.compareAndSet(newId, Integer.MIN_VALUE);
         }
 
+        logger.info("generated sequence {} for {}", newId, nodeId);
         // this also means newId is never MIN_VALUE
         return newId;
     }

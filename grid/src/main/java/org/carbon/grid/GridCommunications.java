@@ -20,15 +20,18 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.internal.SocketUtils;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
+import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.Future;
+import java.util.concurrent.PriorityBlockingQueue;
 
 /**
  * This class handles message passing between nodes.
@@ -52,6 +55,7 @@ class GridCommunications implements Closeable {
 
     private final NonBlockingHashMap<Integer, LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMap<>();
     private final NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient = new NonBlockingHashMap<>();
+    private final NonBlockingHashMapLong<PriorityBlockingQueue<Message>> cacheLineIdToBacklog = new NonBlockingHashMapLong<>();
 
     final short myNodeId;
     private final int myServerPort;
@@ -69,10 +73,7 @@ class GridCommunications implements Closeable {
                 port,
                 bossGroup,
                 workerGroup,
-                this::handleRequest,
-                this::handleResponse,
-                this::ackResponseCallback,
-                this::sendResponseCallback
+                this::handleMessage
         );
         this.internalCache = internalCache;
     }
@@ -118,11 +119,7 @@ class GridCommunications implements Closeable {
         return new CompositeFuture(futures);
     }
 
-    ////////////////////////////////////////////
-    ///////////////////////////////////
-    /////////////////////////////
-    // ASYNC CALLBACK FROM NETTY
-    private void sendResponseCallback(short nodeId, Message msg) {
+    private void sendResponse(short nodeId, Message msg) {
         TcpGridClient client = nodeIdToClient.get(nodeId);
         if (client == null) throw new RuntimeException("couldn't find client for node " + nodeId + " and can't answer message " + msg.getMessageSequenceNumber());
         try {
@@ -133,11 +130,7 @@ class GridCommunications implements Closeable {
         }
     }
 
-    ////////////////////////////////////////////
-    ///////////////////////////////////
-    /////////////////////////////
-    // ASYNC CALLBACK FROM NETTY
-    private void ackResponseCallback(int messageId) {
+    private void ackResponse(int messageId) {
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(messageId);
         if (lAndM == null) {
             logger.info("seeing message id {} again", messageId);
@@ -150,8 +143,51 @@ class GridCommunications implements Closeable {
     ///////////////////////////////////
     /////////////////////////////
     // ASYNC CALLBACK FROM NETTY
-    private Message.Response handleRequest(Message.Request request) {
-        return internalCache.handleRequest(request);
+    private void handleMessage(Message msg) {
+        if (isNextInLine(msg.getSender(), msg.getMessageSequenceNumber())) {
+            if (Message.Request.class.isInstance(msg)) {
+                handleRequest((Message.Request)msg);
+            } else {
+                handleResponse((Message.Response)msg);
+            }
+
+            PriorityBlockingQueue<Message> backlog = cacheLineIdToBacklog.get(msg.lineId);
+            while (backlog != null
+                    && backlog.peek() != null) {
+                Message piggyBackMsg = backlog.poll();
+                if (Message.Request.class.isInstance(msg)) {
+                    handleRequest((Message.Request)piggyBackMsg);
+                } else {
+                    handleResponse((Message.Response)piggyBackMsg);
+                }
+            }
+        } else {
+            cacheLineIdToBacklog.putIfAbsent(msg.lineId, new PriorityBlockingQueue<>(17, Comparator.comparingInt(Message::getMessageSequenceNumber)));
+            cacheLineIdToBacklog.get(msg.lineId).add(msg);
+        }
+    }
+
+    ////////////////////////////////////////////
+    ///////////////////////////////////
+    /////////////////////////////
+    // ASYNC CALLBACK FROM NETTY
+    private void handleRequest(Message.Request request) {
+        Message.Response response = internalCache.handleRequest(request);
+        // in case we don't have anything to say, let's save us the trouble
+        if (response != null) {
+            sendResponse(request.getSender(), response);
+        }
+        if (isNextInLine(request.getSender(), request.getMessageSequenceNumber())) {
+
+            while (cacheLineIdToBacklog.get(request.lineId) != null
+                    && cacheLineIdToBacklog.get(request.lineId).peek() != null) {
+                Message piggyBackRequest = cacheLineIdToBacklog.get(request.lineId).poll();
+                handleMessage(piggyBackRequest);
+            }
+        } else {
+            cacheLineIdToBacklog.putIfAbsent(request.lineId, new PriorityBlockingQueue<>(17, Comparator.comparingInt(Message::getMessageSequenceNumber)));
+            cacheLineIdToBacklog.get(request.lineId).add(request);
+        }
     }
 
     ////////////////////////////////////////////
@@ -160,6 +196,11 @@ class GridCommunications implements Closeable {
     // ASYNC CALLBACK FROM NETTY
     private void handleResponse(Message.Response response) {
         internalCache.handleResponse(response);
+        ackResponse(response.getMessageSequenceNumber());
+    }
+
+    private boolean isNextInLine(short nodeId, int sequenceNumber) {
+        return seqGen.isNextFor(nodeId, sequenceNumber);
     }
 
     private int nextSequenceId(short nodeId) {

@@ -32,9 +32,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.List;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
 /**
  * Due to fairly special ordering guarantees, a server only receives data.
@@ -50,10 +48,7 @@ class TcpGridServer implements Closeable {
             int port,
             EventLoopGroup bossGroup,
             EventLoopGroup workerGroup,
-            Function<Message.Request, Message.Response> handleRequestCallback,
-            Consumer<Message.Response> handleResponseCallback,
-            Consumer<Integer> ackMessageCallback,
-            BiConsumer<Short, Message> sendMessageCallback
+            Consumer<Message> handleMessageCallback
     ) {
         ServerBootstrap b = new ServerBootstrap()
                 .group(bossGroup, workerGroup)
@@ -64,8 +59,8 @@ class TcpGridServer implements Closeable {
                             protected void initChannel(SocketChannel ch) throws Exception {
                                 ch.pipeline().addLast(
                                         new MessageDecoder(),
-                                        new TcpGridServerRequestHandler(sendMessageCallback, handleRequestCallback),
-                                        new TcpGridServerResponseHandler(ackMessageCallback, handleResponseCallback)
+                                        new TcpGridServerRequestHandler(handleMessageCallback),
+                                        new TcpGridServerResponseHandler(handleMessageCallback)
                                 );
                             }
                         }
@@ -108,18 +103,15 @@ class TcpGridServer implements Closeable {
     private static class TcpGridServerResponseHandler extends SimpleChannelInboundHandler<Message.Response> {
         private final static Logger logger = LoggerFactory.getLogger(TcpGridServerResponseHandler.class);
 
-        private final Consumer<Message.Response> handleResponseCallback;
-        private final Consumer<Integer> ackMessageCallBack;
+        private final Consumer<Message> handleMessageCallback;
 
-        TcpGridServerResponseHandler(Consumer<Integer> ackMessageCallback, Consumer<Message.Response> handleResponseCallback) {
-            this.ackMessageCallBack = ackMessageCallback;
-            this.handleResponseCallback = handleResponseCallback;
+        TcpGridServerResponseHandler(Consumer<Message> handleMessageCallback) {
+            this.handleMessageCallback = handleMessageCallback;
         }
 
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, Message.Response response) throws Exception {
-            handleResponseCallback.accept(response);
-            ackMessageCallBack.accept(response.getMessageSequenceNumber());
+            handleMessageCallback.accept(response);
         }
 
         @Override
@@ -136,21 +128,15 @@ class TcpGridServer implements Closeable {
     private static class TcpGridServerRequestHandler extends SimpleChannelInboundHandler<Message.Request> {
         private final static Logger logger = LoggerFactory.getLogger(TcpGridServerRequestHandler.class);
 
-        private final Function<Message.Request, Message.Response> handleRequestCallback;
-        private final BiConsumer<Short, Message> sendMessageCallback;
+        private final Consumer<Message> handleMessageCallback;
 
-        TcpGridServerRequestHandler(BiConsumer<Short, Message> sendMessageCallback, Function<Message.Request, Message.Response> handleRequestCallback) {
-            this.sendMessageCallback = sendMessageCallback;
-            this.handleRequestCallback = handleRequestCallback;
+        TcpGridServerRequestHandler(Consumer<Message> handleMessageCallback) {
+            this.handleMessageCallback = handleMessageCallback;
         }
 
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, Message.Request request) throws Exception {
-            Message.Response response = handleRequestCallback.apply(request);
-            // in case we don't have anything to say, let's save us the trouble
-            if (response != null) {
-                sendMessageCallback.accept(request.getSender(), response);
-            }
+            handleMessageCallback.accept(request);
         }
 
         @Override
