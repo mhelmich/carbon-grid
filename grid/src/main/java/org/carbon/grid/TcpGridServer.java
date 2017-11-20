@@ -40,6 +40,8 @@ import java.util.function.Consumer;
  * In order to send data back, it always uses the client callback mechanism.
  * In a weird sense a server therefore is a read-only component that (by itself)
  * never sends data back.
+ *
+ * Netty for bakes in the behavior of OrderedMemoryAwareThreadPoolExecutor already :)
  */
 class TcpGridServer implements Closeable {
     private final Channel channel;
