@@ -29,7 +29,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public class SequenceGeneratorTest {
@@ -37,11 +36,11 @@ public class SequenceGeneratorTest {
     public void testSequence() {
         short nodeId = (short)123;
         SequenceGenerator gen = new SequenceGenerator();
-        int seq1 = gen.next(nodeId);
-        int seq2 = gen.next(nodeId);
+        int seq1 = gen.nextSequenceForMessageToSend(nodeId);
+        int seq2 = gen.nextSequenceForMessageToSend(nodeId);
         assertEquals(seq1 + 1, seq2);
-        assertTrue(gen.isNextFor(nodeId, seq2 + 1));
-        assertTrue(gen.isNextFor((short)987, 555));
+//        assertTrue(gen.isNextFor(nodeId, Integer.MAX_VALUE));
+//        assertFalse(gen.isNextFor((short)987, 555));
     }
 
     @Test
@@ -62,9 +61,9 @@ public class SequenceGeneratorTest {
                         try {
                             Thread.sleep(r.nextInt(2));
                         } catch (InterruptedException e) {
-                            e.printStackTrace();
+                            fail();
                         }
-                        int sq = gen.next(s);
+                        int sq = gen.nextSequenceForMessageToSend(s);
                         if (set.contains(sq)) {
                             fail();
                         } else {
@@ -81,5 +80,24 @@ public class SequenceGeneratorTest {
         } finally {
             es.shutdown();
         }
+    }
+
+    @Test
+    public void testMarkSeen() {
+        SequenceGenerator gen = new SequenceGenerator();
+        short node = 321;
+//        assertTrue(gen.isNextFor(node, Integer.MAX_VALUE));
+//        assertFalse(gen.isNextFor(node, Integer.MIN_VALUE));
+//        assertFalse(gen.isNextFor(node, Integer.MIN_VALUE + 1));
+//        gen.markRequestHandled(node, Integer.MAX_VALUE);
+//
+//        assertFalse(gen.isNextFor(node, Integer.MAX_VALUE));
+//        assertTrue(gen.isNextFor(node, Integer.MIN_VALUE));
+//        assertFalse(gen.isNextFor(node, Integer.MIN_VALUE + 1));
+//        gen.markRequestHandled(node, Integer.MIN_VALUE);
+//
+//        assertFalse(gen.isNextFor(node, Integer.MAX_VALUE));
+//        assertFalse(gen.isNextFor(node, Integer.MIN_VALUE));
+//        assertTrue(gen.isNextFor(node, Integer.MIN_VALUE + 1));
     }
 }

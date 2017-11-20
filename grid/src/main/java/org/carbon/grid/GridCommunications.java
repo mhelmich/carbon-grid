@@ -16,6 +16,8 @@
 
 package org.carbon.grid;
 
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.hash.Hashing;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.internal.SocketUtils;
@@ -53,7 +55,7 @@ class GridCommunications implements Closeable {
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
     private final SequenceGenerator seqGen = new SequenceGenerator();
 
-    private final NonBlockingHashMap<Integer, LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMap<>();
+    private final NonBlockingHashMapLong<LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMapLong<>();
     private final NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient = new NonBlockingHashMap<>();
     private final NonBlockingHashMapLong<PriorityBlockingQueue<Message>> cacheLineIdToBacklog = new NonBlockingHashMapLong<>();
 
@@ -95,15 +97,17 @@ class GridCommunications implements Closeable {
         // generate message id
         // (relative) uniqueness is enough
         // this is not a sequence number that guarantees full ordering and no gaps
-        msg.setMessageSequenceNumber(nextSequenceId(msg.getSender()));
+        msg.setMessageSequenceNumber(nextSequenceIdForMessageToSend(toNode));
         // do bookkeeping in order to be able to track the response
-        messageIdToLatchAndMessage.put(msg.getMessageSequenceNumber(), new LatchAndMessage(latch, msg));
+        long hash = hashNodeIdMessageSeq(toNode, msg.getMessageSequenceNumber());
+        messageIdToLatchAndMessage.put(hash, new LatchAndMessage(latch, msg));
+        logger.info("{} sending {} to {}", myNodeId, msg, toNode);
         try {
             client.send(msg);
         } catch (IOException xcp) {
-            // clean up in the map
+            // clean the map up
             // otherwise we will collect a ton of dead wood over time
-            messageIdToLatchAndMessage.remove(msg.getMessageSequenceNumber());
+            messageIdToLatchAndMessage.remove(hash);
             throw xcp;
         }
         return latch;
@@ -119,6 +123,7 @@ class GridCommunications implements Closeable {
         return new CompositeFuture(futures);
     }
 
+    // doesn't block
     private void sendResponse(short nodeId, Message msg) {
         TcpGridClient client = nodeIdToClient.get(nodeId);
         if (client == null) throw new RuntimeException("couldn't find client for node " + nodeId + " and can't answer message " + msg.getMessageSequenceNumber());
@@ -130,81 +135,111 @@ class GridCommunications implements Closeable {
         }
     }
 
-    private void ackResponse(int messageId) {
-        LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(messageId);
+    private void ackResponse(Message.Response response) {
+        long hash = hashNodeIdMessageSeq(response.getSender(), response.getMessageSequenceNumber());
+        LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
         if (lAndM == null) {
-            logger.info("seeing message id {} again", messageId);
+            logger.info("{} is seeing message id {} from {} again", myNodeId, response.getMessageSequenceNumber(), response.getSender());
         } else {
             lAndM.latch.countDown();
         }
+        seqGen.markResponseHandled(response.getSender(), response.getMessageSequenceNumber());
     }
 
     ////////////////////////////////////////////
     ///////////////////////////////////
     /////////////////////////////
     // ASYNC CALLBACK FROM NETTY
-    private void handleMessage(Message msg) {
-        if (isNextInLine(msg.getSender(), msg.getMessageSequenceNumber())) {
+    @VisibleForTesting
+    void handleMessage(Message msg) {
+        logger.info("{} receiving {} from {}", myNodeId, msg, msg.getSender());
+        long backlogHash = hashNodeIdCacheLineId(msg.sender, msg.lineId);
+        if (isNextInLine(msg)) {
             if (Message.Request.class.isInstance(msg)) {
                 handleRequest((Message.Request)msg);
             } else {
                 handleResponse((Message.Response)msg);
             }
 
-            PriorityBlockingQueue<Message> backlog = cacheLineIdToBacklog.get(msg.lineId);
-            while (backlog != null
-                    && backlog.peek() != null) {
-                Message piggyBackMsg = backlog.poll();
-                if (Message.Request.class.isInstance(msg)) {
-                    handleRequest((Message.Request)piggyBackMsg);
-                } else {
-                    handleResponse((Message.Response)piggyBackMsg);
+            logger.info("{} haz handled {}", myNodeId, msg);
+
+            // well it seems I'm the thread keeping everybody waiting
+            // then it's only fair to process the rest of the messages
+            PriorityBlockingQueue<Message> backlog = getBacklogMap().get(backlogHash);
+            if (backlog != null) {
+                while (backlog.peek() != null && isNextInLine(backlog.peek())) {
+                    Message piggyBackMsg = backlog.poll();
+                    if (Message.Request.class.isInstance(msg)) {
+                        handleRequest((Message.Request)piggyBackMsg);
+                    } else {
+                        handleResponse((Message.Response)piggyBackMsg);
+                    }
+                }
+                if (backlog.peek() == null) {
+                    getBacklogMap().remove(backlogHash);
                 }
             }
         } else {
-            cacheLineIdToBacklog.putIfAbsent(msg.lineId, new PriorityBlockingQueue<>(17, Comparator.comparingInt(Message::getMessageSequenceNumber)));
-            cacheLineIdToBacklog.get(msg.lineId).add(msg);
+            // if you're not the next message to process,
+            // we throw you into the (sorted) waiting line
+            PriorityBlockingQueue<Message> backlog = getBacklogMap().putIfAbsent(
+                    backlogHash,
+                    new PriorityBlockingQueue<>(17, Comparator.comparingInt(Message::getMessageSequenceNumber)));
+            backlog = (backlog == null) ? getBacklogMap().get(backlogHash) : backlog;
+            backlog.add(msg);
+            logger.info("{} putting message into the backlog {}", myNodeId, msg);
         }
     }
 
-    ////////////////////////////////////////////
-    ///////////////////////////////////
-    /////////////////////////////
-    // ASYNC CALLBACK FROM NETTY
+    private boolean isNextInLine(Message msg) {
+        return seqGen.isNextFor(msg);
+    }
+
+    @VisibleForTesting
+    NonBlockingHashMapLong<PriorityBlockingQueue<Message>> getBacklogMap() {
+        return cacheLineIdToBacklog;
+    }
+
+    private long hashNodeIdMessageSeq(short nodeId, int messageSequence) {
+        return Hashing
+                .murmur3_128()
+                .newHasher()
+                .putShort(nodeId)
+                .putInt(messageSequence)
+                .hash()
+                .asLong();
+    }
+
+    private long hashNodeIdCacheLineId(short nodeId, long cacheLineId) {
+        return Hashing
+                .murmur3_128()
+                .newHasher()
+                .putShort(nodeId)
+                .putLong(cacheLineId)
+                .hash()
+                .asLong();
+    }
+
     private void handleRequest(Message.Request request) {
         Message.Response response = internalCache.handleRequest(request);
         // in case we don't have anything to say, let's save us the trouble
         if (response != null) {
             sendResponse(request.getSender(), response);
-        }
-        if (isNextInLine(request.getSender(), request.getMessageSequenceNumber())) {
-
-            while (cacheLineIdToBacklog.get(request.lineId) != null
-                    && cacheLineIdToBacklog.get(request.lineId).peek() != null) {
-                Message piggyBackRequest = cacheLineIdToBacklog.get(request.lineId).poll();
-                handleMessage(piggyBackRequest);
-            }
-        } else {
-            cacheLineIdToBacklog.putIfAbsent(request.lineId, new PriorityBlockingQueue<>(17, Comparator.comparingInt(Message::getMessageSequenceNumber)));
-            cacheLineIdToBacklog.get(request.lineId).add(request);
+            // it's actually crucially important to mark a request handled
+            // only after sending the response
+            seqGen.markRequestHandled(request.getSender(), request.getMessageSequenceNumber());
         }
     }
 
-    ////////////////////////////////////////////
-    ///////////////////////////////////
-    /////////////////////////////
-    // ASYNC CALLBACK FROM NETTY
-    private void handleResponse(Message.Response response) {
+    @VisibleForTesting
+    void handleResponse(Message.Response response) {
         internalCache.handleResponse(response);
-        ackResponse(response.getMessageSequenceNumber());
+        ackResponse(response);
     }
 
-    private boolean isNextInLine(short nodeId, int sequenceNumber) {
-        return seqGen.isNextFor(nodeId, sequenceNumber);
-    }
-
-    private int nextSequenceId(short nodeId) {
-        return seqGen.next(nodeId);
+    @VisibleForTesting
+    int nextSequenceIdForMessageToSend(short nodeId) {
+        return seqGen.nextSequenceForMessageToSend(nodeId);
     }
 
     private void closeQuietly(Closeable closeable) {
