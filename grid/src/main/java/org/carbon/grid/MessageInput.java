@@ -16,6 +16,7 @@
 
 package org.carbon.grid;
 
+import com.eaio.uuid.UUID;
 import io.netty.buffer.ByteBuf;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
@@ -43,6 +44,10 @@ public class MessageInput extends InputStream implements DataInput {
 
     public ByteBuf readByteBuf(int numBytesToRead) throws IOException {
         return buffer.readRetainedSlice(numBytesToRead);
+    }
+
+    public UUID readUUID() throws IOException {
+        return new UUID(buffer.readLong(), buffer.readLong());
     }
 
     @Override

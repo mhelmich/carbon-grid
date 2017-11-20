@@ -16,6 +16,7 @@
 
 package org.carbon.grid;
 
+import com.eaio.uuid.UUID;
 import io.netty.buffer.ByteBuf;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
@@ -32,6 +33,11 @@ public class MessageOutput extends OutputStream implements DataOutput {
 
     public void writeByteBuf(ByteBuf bites) {
         buffer.writeBytes(bites);
+    }
+
+    public void writeUUID(UUID uuid) {
+        this.buffer.writeLong(uuid.getTime());
+        this.buffer.writeLong(uuid.getClockSeqAndNode());
     }
 
     @Override
