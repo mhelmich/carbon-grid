@@ -69,21 +69,11 @@ class SequenceGenerator {
     @VisibleForTesting
     boolean isNextForRequests(short senderNodeId, int observedSequence) {
         return isNext(handledRequests, senderNodeId, observedSequence);
-//        handledRequests.putIfAbsent(senderNodeId, new AtomicInteger(startingSequence));
-//        AtomicInteger seq = handledRequests.get(senderNodeId);
-//        int lastObserved = seq.get();
-//        int lastObservedPlusOne = next(lastObserved);
-//        return lastObservedPlusOne == observedSequence;
     }
 
     @VisibleForTesting
     boolean isNextForResponsess(short senderNodeId, int observedSequence) {
         return isNext(handledResponses, senderNodeId, observedSequence);
-//        handledResponses.putIfAbsent(senderNodeId, new AtomicInteger(startingSequence));
-//        AtomicInteger seq = handledResponses.get(senderNodeId);
-//        int lastObserved = seq.get();
-//        int lastObservedPlusOne = next(lastObserved);
-//        return lastObservedPlusOne == observedSequence;
     }
 
     private boolean isNext(NonBlockingHashMap<Short, AtomicInteger> map, short senderNodeId, int observedSequence) {
