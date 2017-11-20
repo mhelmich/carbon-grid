@@ -26,9 +26,9 @@ import java.util.Set;
 abstract class Message implements Persistable {
 
     final MessageType type;
-    protected int messageSequenceNumber;
-    protected short sender;
-    protected long lineId;
+    int messageSequenceNumber;
+    short sender;
+    long lineId;
 
     Message(MessageType type) {
         this.type = type;
