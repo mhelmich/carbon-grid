@@ -19,12 +19,15 @@ package org.carbon.grid;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.cliffc.high_scale_lib.NonBlockingHashSet;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.Set;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 class CacheLine {
+    private final static Logger logger = LoggerFactory.getLogger(CacheLine.class);
     private final long id;
     private volatile CacheLineState state;
     private volatile int version;
@@ -32,7 +35,7 @@ class CacheLine {
     private NonBlockingHashSet<Short> sharers;
     private byte flags;
     private ByteBuf data;
-    private final ReentrantLock lock = new ReentrantLock();
+    private final AtomicBoolean isLocked = new AtomicBoolean(false);
 
     CacheLine(long id, int version, short owner, ByteBuf data) {
         this.id = id;
@@ -134,10 +137,22 @@ class CacheLine {
     }
 
     void lock() {
-        lock.tryLock();
+        while (!isLocked.compareAndSet(false, true)) {
+            try {
+                Thread.sleep(1);
+            } catch (InterruptedException xcp) {
+                throw new RuntimeException(xcp);
+            }
+        }
     }
 
     void unlock() {
-        lock.unlock();
+        if (!isLocked.compareAndSet(true, false)) {
+            logger.warn("thread {} tried to unlock line {} but was unlocked already", Thread.currentThread().getName(), id);
+        }
+    }
+
+    boolean isLocked() {
+        return isLocked.get();
     }
 }

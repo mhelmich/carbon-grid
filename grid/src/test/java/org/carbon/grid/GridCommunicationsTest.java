@@ -16,6 +16,7 @@
 
 package org.carbon.grid;
 
+import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -89,6 +90,69 @@ public class GridCommunicationsTest {
             }
         } finally {
             es.shutdown();
+        }
+    }
+
+    @Test
+    public void testAddingToBacklogFromHandler() throws IOException, InterruptedException {
+        short sender = 444;
+        long lineId = 1234567890;
+        InternalCache cacheMock = Mockito.mock(InternalCache.class);
+        CountDownLatch threadEnteredHandler = new CountDownLatch(1);
+        CountDownLatch threadBlocking = new CountDownLatch(1);
+        CountDownLatch threadFinishedProcessing= new CountDownLatch(1);
+        doAnswer(inv -> {
+            threadEnteredHandler.countDown();
+            threadBlocking.await(TIMEOUT, TimeUnit.SECONDS);
+            return null;
+        }).when(cacheMock).handleResponse(any(Message.Response.class));
+
+        ExecutorService es = Executors.newFixedThreadPool(1);
+        try {
+            try (GridCommunications comm = new GridCommunications(sender, 4444, cacheMock)) {
+                Message.ACK ack1 = new Message.ACK(Integer.MAX_VALUE, sender, lineId);
+                Message.ACK ack2 = new Message.ACK(Integer.MIN_VALUE, sender, lineId);
+                ConcurrentLinkedQueue<Message> backlog = comm.getBacklogMap().get(comm.hashNodeIdCacheLineId(sender, lineId));
+                assertNull(backlog);
+
+                es.submit(() -> {
+                    comm.handleMessage(ack2);
+                    threadFinishedProcessing.countDown();
+                    return null;
+                });
+
+                assertTrue(threadEnteredHandler.await(TIMEOUT, TimeUnit.SECONDS));
+                backlog = comm.getBacklogMap().get(comm.hashNodeIdCacheLineId(sender, lineId));
+                assertNotNull(backlog);
+                assertEquals(0, backlog.size());
+                assertTrue(comm.addToCacheLineBacklog(ack1));
+                assertEquals(1, backlog.size());
+                threadBlocking.countDown();
+                assertTrue(threadFinishedProcessing.await(TIMEOUT, TimeUnit.SECONDS));
+                backlog = comm.getBacklogMap().get(comm.hashNodeIdCacheLineId(sender, lineId));
+                assertNull(backlog);
+            }
+        } finally {
+            es.shutdown();
+        }
+    }
+
+    /**
+     * TODO -- actually build this test
+     */
+    @Test
+    @Ignore
+    public void testReactToResponse() throws IOException {
+        short sender = 444;
+        short newOwner = 888;
+        long lineId = 1234567890;
+        int messageRequestId = 987654321;
+        InternalCache cacheMock = Mockito.mock(InternalCache.class);
+
+        Message.GET requestToSend = new Message.GET(sender, lineId);
+        Message.OWNER_CHANGED oc1 = new Message.OWNER_CHANGED(messageRequestId, (short)999, lineId, newOwner, MessageType.GET);
+        try (GridCommunications comm = new GridCommunications(sender, 4444, cacheMock)) {
+            comm.reactToResponse(oc1, oc1.newOwner, requestToSend);
         }
     }
 }

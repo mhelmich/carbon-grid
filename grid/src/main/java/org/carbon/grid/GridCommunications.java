@@ -33,6 +33,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
@@ -66,7 +67,7 @@ class GridCommunications implements Closeable {
     private final NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient = new NonBlockingHashMap<>();
     private final NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> cacheLineIdToBacklog = new NonBlockingHashMapLong<>();
 
-    private final AtomicInteger sequence = new AtomicInteger();
+    private final AtomicInteger sequence = new AtomicInteger(new Random().nextInt());
 
     final short myNodeId;
     private final int myServerPort;
@@ -110,7 +111,7 @@ class GridCommunications implements Closeable {
         // do bookkeeping in order to be able to track the response
         long hash = hashNodeIdMessageSeq(toNode, msg.getMessageSequenceNumber());
         messageIdToLatchAndMessage.put(hash, new LatchAndMessage(latch, msg));
-        logger.info("{} sending {} to {}", myNodeId, msg, toNode);
+        logger.info("{} [send] {} to {} hash {}", myNodeId, msg, toNode, hash);
         try {
             // do error handling in an async handler (netty-style)
             client.send(msg).addListener(new FailingCompleteListener(hash, messageIdToLatchAndMessage));
@@ -138,9 +139,14 @@ class GridCommunications implements Closeable {
     // still requires getting the cache line in question
     // in those situations receiving a change_ownership response is followed by sending
     // a get or getx request
-    void reactToResponse(Message.Response response, short toNode, Message.Request requestToSend) {
-        long hash = hashNodeIdMessageSeq(response.getSender(), response.getMessageSequenceNumber());
+    void reactToResponse(Message.Response responseIReceived, short toNode, Message.Request requestToSend) {
+        long hash = hashNodeIdMessageSeq(responseIReceived.getSender(), responseIReceived.getMessageSequenceNumber());
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
+        if (lAndM == null) {
+            // TODO -- find the root cause for this happening all the time
+            logger.warn("{} [reactToResponse] won't react hash {} message {}", myNodeId, hash, responseIReceived);
+            return;
+        }
 
         TcpGridClient client = nodeIdToClient.get(toNode);
         if (client == null) {
@@ -149,10 +155,11 @@ class GridCommunications implements Closeable {
             throw rte;
         }
 
+        // carry over the original latch since somebody might be waiting on it
         requestToSend.setMessageSequenceNumber(nextSequenceIdForMessageToSend());
         long newHash = hashNodeIdMessageSeq(toNode, requestToSend.getMessageSequenceNumber());
         messageIdToLatchAndMessage.put(newHash, new LatchAndMessage(lAndM.latch, requestToSend));
-        logger.info("{} sending {} to {}", myNodeId, requestToSend, toNode);
+        logger.info("{} [reactToResponse] {} to {} hash {}", myNodeId, requestToSend, toNode, hash);
         try {
             // do error handling in an async handler (netty-style)
             client.send(requestToSend).addListener(new FailingCompleteListener(newHash, messageIdToLatchAndMessage));
@@ -162,6 +169,24 @@ class GridCommunications implements Closeable {
             messageIdToLatchAndMessage.remove(newHash);
             lAndM.latch.completeExceptionally(xcp);
             throw new RuntimeException(xcp);
+        }
+    }
+
+    // in some cases (e.g. when a cache line is locked) a handler might decide to toss
+    // a message into the backlog
+    // this method takes care of that
+    // it returns true if the message was indeed added to the backlog
+    // it returns false if the message couldn't be added to the backlog
+    boolean addToCacheLineBacklog(Message message) {
+        NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> hashToBacklog = getBacklogMap();
+        long backlogHash = hashNodeIdCacheLineId(message.sender, message.lineId);
+        ConcurrentLinkedQueue<Message> backlog = hashToBacklog.get(backlogHash);
+        if (backlog == null) {
+            logger.warn("you asked for message {} to be added to the backlog but there was none", message);
+            return false;
+        } else {
+            backlog.add(message);
+            return true;
         }
     }
 
@@ -177,7 +202,7 @@ class GridCommunications implements Closeable {
         // is also buffers all incoming messages for this cache line in a queue
         ConcurrentLinkedQueue<Message> backlog = hashToBacklog.putIfAbsent(backlogHash, new ConcurrentLinkedQueue<>());
         if (backlog == null) {
-            logger.info("{} processing message {} with hash {}", myNodeId, msg, backlogHash);
+            logger.info("{} [handleMessage] {} with hash {}", myNodeId, msg, backlogHash);
             // go ahead and process
             innerHandleMessage(msg);
 
@@ -227,13 +252,14 @@ class GridCommunications implements Closeable {
     // generates the hash for the cache line backlog
     @VisibleForTesting
     long hashNodeIdCacheLineId(short nodeId, long cacheLineId) {
-        return Hashing
-                .murmur3_128()
-                .newHasher()
-                .putShort(nodeId)
-                .putLong(cacheLineId)
-                .hash()
-                .asLong();
+        return cacheLineId;
+//        return Hashing
+//                .murmur3_128()
+//                .newHasher()
+//                .putShort(nodeId)
+//                .putLong(cacheLineId)
+//                .hash()
+//                .asLong();
     }
 
     private void innerHandleMessage(Message msg) {
@@ -277,8 +303,11 @@ class GridCommunications implements Closeable {
         long hash = hashNodeIdMessageSeq(response.getSender(), response.getMessageSequenceNumber());
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
         if (lAndM == null) {
-            logger.info("{} is seeing message id {} from {} again", myNodeId, response.getMessageSequenceNumber(), response.getSender());
+            // TODO -- find the root cause for this to happen too often
+            logger.info("{} [ackResponse] failure id {} sender {} hash {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash);
+            logger.info("map {}", messageIdToLatchAndMessage);
         } else {
+            logger.info("{} [ackResponse] success id {} sender {} hash {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash);
             lAndM.latch.complete(null);
         }
     }
@@ -313,6 +342,8 @@ class GridCommunications implements Closeable {
         closeQuietly(tcpGridServer);
         workerGroup.shutdownGracefully();
         bossGroup.shutdownGracefully();
+        messageIdToLatchAndMessage.clear();
+        cacheLineIdToBacklog.clear();
     }
 
     @Override
