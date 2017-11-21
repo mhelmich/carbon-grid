@@ -20,14 +20,14 @@
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <layout class="ch.qos.logback.classic.PatternLayout">
-            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyyMMddHHmmss.SSS} [%thread] [%C{10}:%L] %-5level - %msg%n</pattern>
         </layout>
     </appender>
 
     <appender name="FILE-APPENDER" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOGS_DIR}/application.log</file>
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyyMMddHHmmss.SSS} [%thread] [%C{10}:%L] %-5level - %msg%n</pattern>
         </encoder>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>${LOGS_DIR}/application.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
