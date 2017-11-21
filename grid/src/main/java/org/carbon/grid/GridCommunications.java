@@ -304,10 +304,9 @@ class GridCommunications implements Closeable {
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
         if (lAndM == null) {
             // TODO -- find the root cause for this to happen too often
-            logger.info("{} [ackResponse] failure id {} sender {} hash {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash);
-            logger.info("map {}", messageIdToLatchAndMessage);
+            logger.info("{} [ackResponse] failure id {} sender {} hash {} message {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash, response);
         } else {
-            logger.info("{} [ackResponse] success id {} sender {} hash {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash);
+            logger.info("{} [ackResponse] success id {} sender {} hash {} message {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash, response);
             lAndM.latch.complete(null);
         }
     }
@@ -387,8 +386,12 @@ class GridCommunications implements Closeable {
         }
 
         @Override
-        public void operationComplete(ChannelFuture channelFuture) throws Exception {
-            if (count <= RESPONSE_SEND_RETRIES) {
+        public void operationComplete(ChannelFuture f) throws Exception {
+            Throwable cause = f.cause();
+            // according to https://netty.io/4.1/api/io/netty/channel/ChannelFuture.html
+            // isDone and cause!=null constitute a failure
+            if (f.isDone() && cause != null && count <= RESPONSE_SEND_RETRIES) {
+                logger.warn("sending {} failed ... retrying", msg, cause);
                 // wait a little wait time for retries
                 Thread.sleep(RESPONSE_SEND_RETRIES_WAIT * count);
                 TcpGridClient client = nodeIdToClient.get(nodeId);
