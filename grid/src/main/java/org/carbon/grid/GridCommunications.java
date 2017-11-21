@@ -51,6 +51,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * The server never (!!!) replies in the worker socket that is created with each
  * incoming connection. It always always always replies using the dedicated client
  * for the node it wants to talk to.
+ *
+ * This is a good source of info regarding netty as well:
+ * https://github.com/netty/netty/wiki
  */
 class GridCommunications implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(GridCommunications.class);

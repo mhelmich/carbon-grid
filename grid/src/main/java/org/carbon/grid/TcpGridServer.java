@@ -42,6 +42,7 @@ import java.util.function.Consumer;
  * never sends data back.
  *
  * Netty for bakes in the behavior of OrderedMemoryAwareThreadPoolExecutor already :)
+ * In less clarity here: https://netty.io/wiki/new-and-noteworthy-in-4.0.html#wiki-h2-34
  */
 class TcpGridServer implements Closeable {
     private final Channel channel;
