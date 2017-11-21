@@ -54,6 +54,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 class GridCommunications implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(GridCommunications.class);
+    private final static int RESPONSE_SEND_RETRIES = 3;
+    private final static int RESPONSE_SEND_RETRIES_WAIT = 100;
     private final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
 
@@ -107,7 +109,8 @@ class GridCommunications implements Closeable {
         messageIdToLatchAndMessage.put(hash, new LatchAndMessage(latch, msg));
         logger.info("{} sending {} to {}", myNodeId, msg, toNode);
         try {
-            client.send(msg).addListener(new SendCompleteListener(hash, messageIdToLatchAndMessage));
+            // do error handling in an async handler (netty-style)
+            client.send(msg).addListener(new FailingCompleteListener(hash, messageIdToLatchAndMessage));
         } catch (IOException xcp) {
             // clean the map up
             // otherwise we will collect a ton of dead wood over time
@@ -127,25 +130,40 @@ class GridCommunications implements Closeable {
         return new CompositeFuture(futures);
     }
 
-    // doesn't block
-    private void sendResponse(short nodeId, Message msg) {
-        TcpGridClient client = nodeIdToClient.get(nodeId);
-        if (client == null) throw new RuntimeException("couldn't find client for node " + nodeId + " and can't answer message " + msg.getMessageSequenceNumber());
-        try {
-            client.send(msg);
-        } catch (IOException xcp) {
-            // the surrounding netty handler catches exceptions
-            throw new RuntimeException(xcp);
-        }
-    }
+    ////////////////////////////////////////////
+    ///////////////////////////////////
+    /////////////////////////////
+    // ASYNC CALLBACK FROM NETTY
+    @VisibleForTesting
+    void handleMessage(Message msg) {
+        NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> hashToBacklog = getBacklogMap();
+        long backlogHash = hashNodeIdCacheLineId(msg.sender, msg.lineId);
+        // this queue acts as token to indicate that a different thread is processing a message for this cache line
+        // is also buffers all incoming messages for this cache line in a queue
+        ConcurrentLinkedQueue<Message> backlog = hashToBacklog.putIfAbsent(backlogHash, new ConcurrentLinkedQueue<>());
+        if (backlog == null) {
+            logger.info("{} processing message {} with hash {}", myNodeId, msg, backlogHash);
+            // go ahead and process
+            innerHandleMessage(msg);
 
-    private void ackResponse(Message.Response response) {
-        long hash = hashNodeIdMessageSeq(response.getSender(), response.getMessageSequenceNumber());
-        LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
-        if (lAndM == null) {
-            logger.info("{} is seeing message id {} from {} again", myNodeId, response.getMessageSequenceNumber(), response.getSender());
+            // after processing this particular message went down well,
+            // this thread is somewhat responsible for cleaning out the backlog of messages it caused
+            backlog = hashToBacklog.get(backlogHash);
+            while (backlog.peek() != null) {
+                Message backlogMsg = backlog.poll();
+                logger.info("{} processing backlog message {} with hash {}", myNodeId, backlogMsg, backlogHash);
+                innerHandleMessage(backlogMsg);
+                // remove the hash if the backlog is empty
+                // this runs atomically
+                removeIfEmpty(backlogHash, hashToBacklog);
+            }
+
+            // remove the hash if the backlog is empty
+            // this runs atomically
+            removeIfEmpty(backlogHash, hashToBacklog);
         } else {
-            lAndM.latch.complete(null);
+            backlog.add(msg);
+            logger.info("{} putting message into the backlog {} with hash {}", myNodeId, msg, backlogHash);
         }
     }
 
@@ -155,50 +173,12 @@ class GridCommunications implements Closeable {
         );
     }
 
-    ////////////////////////////////////////////
-    ///////////////////////////////////
-    /////////////////////////////
-    // ASYNC CALLBACK FROM NETTY
-    @VisibleForTesting
-    void handleMessage(Message msg) {
-        NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> hashToBacklog = getBacklogMap();
-        long backlogHash = hashNodeIdCacheLineId(msg.sender, msg.lineId);
-        ConcurrentLinkedQueue<Message> backlog = hashToBacklog.putIfAbsent(backlogHash, new ConcurrentLinkedQueue<>());
-        if (backlog == null) {
-            logger.info("{} processing message {} with hash {}", myNodeId, msg, backlogHash);
-            // go ahead and process
-            if (Message.Request.class.isInstance(msg)) {
-                handleRequest((Message.Request)msg);
-            } else {
-                handleResponse((Message.Response)msg);
-            }
-
-            backlog = hashToBacklog.get(backlogHash);
-            while (backlog.peek() != null) {
-                Message backlogMsg = backlog.poll();
-                logger.info("{} processing message {} with hash {}", myNodeId, backlogMsg, backlogHash);
-                if (Message.Request.class.isInstance(backlogMsg)) {
-                    handleRequest((Message.Request)backlogMsg);
-                } else {
-                    handleResponse((Message.Response)backlogMsg);
-                }
-                // remove the hash if the backlog is empty
-                removeIfEmpty(backlogHash, hashToBacklog);
-            }
-
-            // remove the hash if the backlog is empty
-            removeIfEmpty(backlogHash, hashToBacklog);
-        } else {
-            backlog.add(msg);
-            logger.info("{} putting message into the backlog {} with hash {}", myNodeId, msg, backlogHash);
-        }
-    }
-
     @VisibleForTesting
     NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> getBacklogMap() {
         return cacheLineIdToBacklog;
     }
 
+    // generates the hash for the latch map
     private long hashNodeIdMessageSeq(short nodeId, int messageSequence) {
         return Hashing
                 .murmur3_128()
@@ -209,6 +189,7 @@ class GridCommunications implements Closeable {
                 .asLong();
     }
 
+    // generates the hash for the cache line backlog
     private long hashNodeIdCacheLineId(short nodeId, long cacheLineId) {
         return Hashing
                 .murmur3_128()
@@ -219,7 +200,17 @@ class GridCommunications implements Closeable {
                 .asLong();
     }
 
-    private void handleRequest(Message.Request request) {
+    private void innerHandleMessage(Message msg) {
+        if (msg != null) {
+            if (Message.Request.class.isInstance(msg)) {
+                innerHandleRequest((Message.Request)msg);
+            } else {
+                innerHandleResponse((Message.Response)msg);
+            }
+        }
+    }
+
+    private void innerHandleRequest(Message.Request request) {
         Message.Response response = internalCache.handleRequest(request);
         // in case we don't have anything to say, let's save us the trouble
         if (response != null) {
@@ -227,11 +218,38 @@ class GridCommunications implements Closeable {
         }
     }
 
-    private void handleResponse(Message.Response response) {
+    // doesn't block
+    private void sendResponse(short nodeId, Message msg) {
+        TcpGridClient client = nodeIdToClient.get(nodeId);
+        if (client == null) throw new RuntimeException("couldn't find client for node " + nodeId + " and can't answer message " + msg.getMessageSequenceNumber());
+        try {
+            client.send(msg).addListener(new RetryingCompleteListener(nodeId, msg, nodeIdToClient));
+        } catch (IOException xcp) {
+            // the surrounding netty handler catches exceptions
+            throw new RuntimeException(xcp);
+        }
+    }
+
+    private void innerHandleResponse(Message.Response response) {
         internalCache.handleResponse(response);
         ackResponse(response);
     }
 
+    // does bookkeeping around latches and cleaning up
+    // the error handling part is done in an async handler (see implementation below)
+    private void ackResponse(Message.Response response) {
+        long hash = hashNodeIdMessageSeq(response.getSender(), response.getMessageSequenceNumber());
+        LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
+        if (lAndM == null) {
+            logger.info("{} is seeing message id {} from {} again", myNodeId, response.getMessageSequenceNumber(), response.getSender());
+        } else {
+            lAndM.latch.complete(null);
+        }
+    }
+
+    // this sequence is just a revolving integer that generates a somewhat unique id for a message
+    // this is the easiest (and smallest) way I could come up with to get some sort of pseudo id going
+    // it's not UUIDs but also smaller :)
     private int nextSequenceIdForMessageToSend() {
         int seq;
         int newSeq;
@@ -280,11 +298,55 @@ class GridCommunications implements Closeable {
         }
     }
 
-    private static class SendCompleteListener implements ChannelFutureListener {
+    /**
+     * When sending a response to a remote node, it might wait for it and block other requests.
+     * In those cases it seems beneficial to retry sending messages.
+     */
+    private static class RetryingCompleteListener implements ChannelFutureListener {
+        private final short nodeId;
+        private final Message msg;
+        private final NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient;
+        private final int count;
+
+        RetryingCompleteListener(short nodeId, Message msg, NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient) {
+            this(nodeId, msg, nodeIdToClient, 0);
+        }
+
+        RetryingCompleteListener(short nodeId, Message msg, NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient, int count) {
+            this.nodeId = nodeId;
+            this.msg = msg;
+            this.nodeIdToClient = nodeIdToClient;
+            this.count = count;
+        }
+
+        @Override
+        public void operationComplete(ChannelFuture channelFuture) throws Exception {
+            if (count <= RESPONSE_SEND_RETRIES) {
+                // wait a little wait time for retries
+                Thread.sleep(RESPONSE_SEND_RETRIES_WAIT * count);
+                TcpGridClient client = nodeIdToClient.get(nodeId);
+                // yes, that should be interesting if this is null
+                if (client == null) throw new RuntimeException("couldn't find client for node " + nodeId + " and can't answer message " + msg.getMessageSequenceNumber());
+                try {
+                    client.send(msg).addListener(new RetryingCompleteListener(nodeId, msg, nodeIdToClient, count + 1));
+                } catch (IOException xcp) {
+                    // the surrounding netty handler catches exceptions
+                    throw new RuntimeException(xcp);
+                }
+            }
+        }
+    }
+
+    /**
+     * This listener listens on request sending and fails to the consumer if sending a request fails.
+     * Other than sending responses, it doesn't seem right to transparently retry because the ordering
+     * of messages might be off.
+     */
+    private static class FailingCompleteListener implements ChannelFutureListener {
         private final long hash;
         private final NonBlockingHashMapLong<LatchAndMessage> messageIdToLatchAndMessage;
 
-        SendCompleteListener(long hash, NonBlockingHashMapLong<LatchAndMessage> messageIdToLatchAndMessage) {
+        FailingCompleteListener(long hash, NonBlockingHashMapLong<LatchAndMessage> messageIdToLatchAndMessage) {
             this.hash = hash;
             this.messageIdToLatchAndMessage = messageIdToLatchAndMessage;
         }
