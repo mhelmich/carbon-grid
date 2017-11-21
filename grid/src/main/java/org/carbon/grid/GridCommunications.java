@@ -193,7 +193,8 @@ class GridCommunications implements Closeable {
     }
 
     // generates the hash for the cache line backlog
-    private long hashNodeIdCacheLineId(short nodeId, long cacheLineId) {
+    @VisibleForTesting
+    long hashNodeIdCacheLineId(short nodeId, long cacheLineId) {
         return Hashing
                 .murmur3_128()
                 .newHasher()
