@@ -18,6 +18,8 @@ package org.carbon.grid;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.hash.Hashing;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.internal.SocketUtils;
@@ -29,11 +31,12 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
-import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * This class handles message passing between nodes.
@@ -53,11 +56,12 @@ class GridCommunications implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(GridCommunications.class);
     private final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
-    private final SequenceGenerator seqGen = new SequenceGenerator();
 
     private final NonBlockingHashMapLong<LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMapLong<>();
     private final NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient = new NonBlockingHashMap<>();
-    private final NonBlockingHashMapLong<PriorityBlockingQueue<Message>> cacheLineIdToBacklog = new NonBlockingHashMapLong<>();
+    private final NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> cacheLineIdToBacklog = new NonBlockingHashMapLong<>();
+
+    private final AtomicInteger sequence = new AtomicInteger();
 
     final short myNodeId;
     private final int myServerPort;
@@ -80,7 +84,7 @@ class GridCommunications implements Closeable {
         this.internalCache = internalCache;
     }
 
-    void addPeer(short nodeId, InetSocketAddress addr) {
+    private void addPeer(short nodeId, InetSocketAddress addr) {
         logger.info("adding peer {} {}", nodeId, addr);
         nodeIdToClient.put(nodeId, new TcpGridClient(nodeId, addr, workerGroup, internalCache));
     }
@@ -93,17 +97,17 @@ class GridCommunications implements Closeable {
         TcpGridClient client = nodeIdToClient.get(toNode);
         if (client == null) throw new RuntimeException("couldn't find client for node " + toNode + " and can't answer message " + msg.getMessageSequenceNumber());
 
-        CountDownLatchFuture latch = new CountDownLatchFuture();
+        CompletableFuture<Void> latch = new CompletableFuture<>();
         // generate message id
         // (relative) uniqueness is enough
         // this is not a sequence number that guarantees full ordering and no gaps
-        msg.setMessageSequenceNumber(nextSequenceIdForMessageToSend(toNode));
+        msg.setMessageSequenceNumber(nextSequenceIdForMessageToSend());
         // do bookkeeping in order to be able to track the response
         long hash = hashNodeIdMessageSeq(toNode, msg.getMessageSequenceNumber());
         messageIdToLatchAndMessage.put(hash, new LatchAndMessage(latch, msg));
         logger.info("{} sending {} to {}", myNodeId, msg, toNode);
         try {
-            client.send(msg);
+            client.send(msg).addListener(new SendCompleteListener(hash, messageIdToLatchAndMessage));
         } catch (IOException xcp) {
             // clean the map up
             // otherwise we will collect a ton of dead wood over time
@@ -141,9 +145,14 @@ class GridCommunications implements Closeable {
         if (lAndM == null) {
             logger.info("{} is seeing message id {} from {} again", myNodeId, response.getMessageSequenceNumber(), response.getSender());
         } else {
-            lAndM.latch.countDown();
+            lAndM.latch.complete(null);
         }
-        seqGen.markResponseHandled(response.getSender(), response.getMessageSequenceNumber());
+    }
+
+    private void removeIfEmpty(long backlogHash, NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> hashToBacklog) {
+        hashToBacklog.computeIfPresent(backlogHash,
+                (key, value) -> value.peek() == null ? null : value
+        );
     }
 
     ////////////////////////////////////////////
@@ -152,51 +161,41 @@ class GridCommunications implements Closeable {
     // ASYNC CALLBACK FROM NETTY
     @VisibleForTesting
     void handleMessage(Message msg) {
-        logger.info("{} receiving {} from {}", myNodeId, msg, msg.getSender());
+        NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> hashToBacklog = getBacklogMap();
         long backlogHash = hashNodeIdCacheLineId(msg.sender, msg.lineId);
-        if (isNextInLine(msg)) {
+        ConcurrentLinkedQueue<Message> backlog = hashToBacklog.putIfAbsent(backlogHash, new ConcurrentLinkedQueue<>());
+        if (backlog == null) {
+            logger.info("{} processing message {} with hash {}", myNodeId, msg, backlogHash);
+            // go ahead and process
             if (Message.Request.class.isInstance(msg)) {
                 handleRequest((Message.Request)msg);
             } else {
                 handleResponse((Message.Response)msg);
             }
 
-            logger.info("{} haz handled {}", myNodeId, msg);
-
-            // well it seems I'm the thread keeping everybody waiting
-            // then it's only fair to process the rest of the messages
-            PriorityBlockingQueue<Message> backlog = getBacklogMap().get(backlogHash);
-            if (backlog != null) {
-                while (backlog.peek() != null && isNextInLine(backlog.peek())) {
-                    Message piggyBackMsg = backlog.poll();
-                    if (Message.Request.class.isInstance(msg)) {
-                        handleRequest((Message.Request)piggyBackMsg);
-                    } else {
-                        handleResponse((Message.Response)piggyBackMsg);
-                    }
+            backlog = hashToBacklog.get(backlogHash);
+            while (backlog.peek() != null) {
+                Message backlogMsg = backlog.poll();
+                logger.info("{} processing message {} with hash {}", myNodeId, backlogMsg, backlogHash);
+                if (Message.Request.class.isInstance(backlogMsg)) {
+                    handleRequest((Message.Request)backlogMsg);
+                } else {
+                    handleResponse((Message.Response)backlogMsg);
                 }
-                if (backlog.peek() == null) {
-                    getBacklogMap().remove(backlogHash);
-                }
+                // remove the hash if the backlog is empty
+                removeIfEmpty(backlogHash, hashToBacklog);
             }
+
+            // remove the hash if the backlog is empty
+            removeIfEmpty(backlogHash, hashToBacklog);
         } else {
-            // if you're not the next message to process,
-            // we throw you into the (sorted) waiting line
-            PriorityBlockingQueue<Message> backlog = getBacklogMap().putIfAbsent(
-                    backlogHash,
-                    new PriorityBlockingQueue<>(17, Comparator.comparingInt(Message::getMessageSequenceNumber)));
-            backlog = (backlog == null) ? getBacklogMap().get(backlogHash) : backlog;
             backlog.add(msg);
-            logger.info("{} putting message into the backlog {}", myNodeId, msg);
+            logger.info("{} putting message into the backlog {} with hash {}", myNodeId, msg, backlogHash);
         }
     }
 
-    private boolean isNextInLine(Message msg) {
-        return seqGen.isNextFor(msg);
-    }
-
     @VisibleForTesting
-    NonBlockingHashMapLong<PriorityBlockingQueue<Message>> getBacklogMap() {
+    NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> getBacklogMap() {
         return cacheLineIdToBacklog;
     }
 
@@ -225,21 +224,22 @@ class GridCommunications implements Closeable {
         // in case we don't have anything to say, let's save us the trouble
         if (response != null) {
             sendResponse(request.getSender(), response);
-            // it's actually crucially important to mark a request handled
-            // only after sending the response
-            seqGen.markRequestHandled(request.getSender(), request.getMessageSequenceNumber());
         }
     }
 
-    @VisibleForTesting
-    void handleResponse(Message.Response response) {
+    private void handleResponse(Message.Response response) {
         internalCache.handleResponse(response);
         ackResponse(response);
     }
 
-    @VisibleForTesting
-    int nextSequenceIdForMessageToSend(short nodeId) {
-        return seqGen.nextSequenceForMessageToSend(nodeId);
+    private int nextSequenceIdForMessageToSend() {
+        int seq;
+        int newSeq;
+        do {
+            seq = sequence.get();
+            newSeq = (seq == Integer.MAX_VALUE) ? Integer.MIN_VALUE : seq + 1;
+        } while(!sequence.compareAndSet(seq, newSeq));
+        return newSeq;
     }
 
     private void closeQuietly(Closeable closeable) {
@@ -267,9 +267,9 @@ class GridCommunications implements Closeable {
     }
 
     private static class LatchAndMessage {
-        final CountDownLatchFuture latch;
+        final CompletableFuture<Void> latch;
         final Message msg;
-        LatchAndMessage(CountDownLatchFuture latch, Message msg) {
+        LatchAndMessage(CompletableFuture<Void> latch, Message msg) {
             this.latch = latch;
             this.msg = msg;
         }
@@ -277,6 +277,32 @@ class GridCommunications implements Closeable {
         @Override
         public String toString() {
             return "latch: " + latch + " msg: " + msg;
+        }
+    }
+
+    private static class SendCompleteListener implements ChannelFutureListener {
+        private final long hash;
+        private final NonBlockingHashMapLong<LatchAndMessage> messageIdToLatchAndMessage;
+
+        SendCompleteListener(long hash, NonBlockingHashMapLong<LatchAndMessage> messageIdToLatchAndMessage) {
+            this.hash = hash;
+            this.messageIdToLatchAndMessage = messageIdToLatchAndMessage;
+        }
+
+        @Override
+        public void operationComplete(ChannelFuture f) throws Exception {
+            // for now we just log an error and move on with our lives
+            // you might conceive of retry logic here
+            // but then we need to take care of ordering on the receiving end which we don't do today
+            // best to throw up an error and leave it to the client to decide what to do
+            Throwable t = f.cause();
+            if (f.isDone() && t != null) {
+                // log out errors first just in case
+                logger.error("", t);
+                LatchAndMessage lam = messageIdToLatchAndMessage.remove(hash);
+                // if lam is ever null for some reason ... there's a big bug in our bookkeeping somewhere
+                lam.latch.completeExceptionally(t);
+            }
         }
     }
 }
