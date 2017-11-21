@@ -161,7 +161,13 @@ class InternalCacheImpl implements InternalCache, Closeable {
             if (line == null) {
                 return new Message.ACK(getx.getMessageSequenceNumber(), myNodeId, getx.lineId);
             } else {
-                return new Message.OWNER_CHANGED(getx.getMessageSequenceNumber(), myNodeId, line.getId(), line.getOwner());
+                return new Message.OWNER_CHANGED(
+                        getx.getMessageSequenceNumber(),
+                        myNodeId,
+                        line.getId(),
+                        line.getOwner(),
+                        MessageType.GETX
+                );
             }
         }
     }
@@ -170,6 +176,9 @@ class InternalCacheImpl implements InternalCache, Closeable {
         logger.info("cache handler {} get: {}", this, get);
         CacheLine line = owned.get(get.lineId);
         if (line != null) {
+            if (CacheLineState.EXCLUSIVE.equals(line.getState())) {
+                line.setState(CacheLineState.OWNED);
+            }
             line.addSharer(get.getSender());
             return new Message.PUT(
                     get.getMessageSequenceNumber(),
@@ -187,7 +196,8 @@ class InternalCacheImpl implements InternalCache, Closeable {
                         get.getMessageSequenceNumber(),
                         myNodeId,
                         line.getId(),
-                        line.getOwner()
+                        line.getOwner(),
+                        MessageType.GET
                 );
             } else {
                 // I don't know this cache line at all
@@ -281,6 +291,20 @@ class InternalCacheImpl implements InternalCache, Closeable {
         if (line != null) {
             line.setState(CacheLineState.INVALID);
             line.setOwner(ownerChanged.newOwner);
+
+            Message.Request messageToSend;
+            switch (ownerChanged.originalMsgType) {
+                case GET:
+                    messageToSend = new Message.GET(myNodeId, ownerChanged.lineId);
+                    break;
+                case GETX:
+                    messageToSend = new Message.GETX(myNodeId, ownerChanged.lineId);
+                    break;
+                default:
+                    throw new RuntimeException("unknown message type " + ownerChanged.originalMsgType);
+            }
+
+            comms.reactToResponse(ownerChanged, ownerChanged.newOwner, messageToSend);
         }
     }
 
@@ -326,7 +350,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     private CacheLine wrap(ByteBuf bytebuf) {
         long newLineId = nextClusterUniqueCacheLineId();
         CacheLine line = new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, bytebuf);
-        line.setState(CacheLineState.OWNED);
+        line.setState(CacheLineState.EXCLUSIVE);
         return line;
     }
 
@@ -438,6 +462,12 @@ class InternalCacheImpl implements InternalCache, Closeable {
     @Override
     public void close() throws IOException {
         comms.close();
+        for (CacheLine line : owned.values()) {
+            line.releaseData();
+        }
+        for (CacheLine line : shared.values()) {
+            line.releaseData();
+        }
     }
 
     @Override

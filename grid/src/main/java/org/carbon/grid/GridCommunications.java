@@ -133,6 +133,38 @@ class GridCommunications implements Closeable {
         return new CompositeFuture(futures);
     }
 
+    // this method is supposed to used when handling a response requires sending another request
+    // an example can be handling ownership of cache lines when processing an ownership change
+    // still requires getting the cache line in question
+    // in those situations receiving a change_ownership response is followed by sending
+    // a get or getx request
+    void reactToResponse(Message.Response response, short toNode, Message.Request requestToSend) {
+        long hash = hashNodeIdMessageSeq(response.getSender(), response.getMessageSequenceNumber());
+        LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
+
+        TcpGridClient client = nodeIdToClient.get(toNode);
+        if (client == null) {
+            RuntimeException rte = new RuntimeException("couldn't find client for node " + toNode + " and can't answer message " + requestToSend.getMessageSequenceNumber());
+            lAndM.latch.completeExceptionally(rte);
+            throw rte;
+        }
+
+        requestToSend.setMessageSequenceNumber(nextSequenceIdForMessageToSend());
+        long newHash = hashNodeIdMessageSeq(toNode, requestToSend.getMessageSequenceNumber());
+        messageIdToLatchAndMessage.put(newHash, new LatchAndMessage(lAndM.latch, requestToSend));
+        logger.info("{} sending {} to {}", myNodeId, requestToSend, toNode);
+        try {
+            // do error handling in an async handler (netty-style)
+            client.send(requestToSend).addListener(new FailingCompleteListener(newHash, messageIdToLatchAndMessage));
+        } catch (IOException xcp) {
+            // clean the map up
+            // otherwise we will collect a ton of dead wood over time
+            messageIdToLatchAndMessage.remove(newHash);
+            lAndM.latch.completeExceptionally(xcp);
+            throw new RuntimeException(xcp);
+        }
+    }
+
     ////////////////////////////////////////////
     ///////////////////////////////////
     /////////////////////////////

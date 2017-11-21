@@ -89,6 +89,12 @@ class CacheLine {
         this.data = data;
     }
 
+    void releaseData() {
+        if (data != null) {
+            data.release();
+        }
+    }
+
     void setSharers(Set<Short> sharers) {
         if (!sharers.isEmpty()) {
             if (this.sharers == null) {

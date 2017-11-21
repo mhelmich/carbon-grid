@@ -94,7 +94,7 @@ public class CacheTest {
             assertEqualsBites(testData.getBytes(), localBB);
             CacheLine line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertNotNull(line123);
-            assertEquals(CacheLineState.OWNED, line123.getState());
+            assertEquals(CacheLineState.EXCLUSIVE, line123.getState());
             assertEquals(threeCaches.cache123.myNodeId, line123.getOwner());
             CacheLine line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNull(line456);
@@ -140,7 +140,7 @@ public class CacheTest {
             assertEqualsBites(testData.getBytes(), localBB);
             CacheLine line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertNotNull(line123);
-            assertEquals(CacheLineState.OWNED, line123.getState());
+            assertEquals(CacheLineState.EXCLUSIVE, line123.getState());
             assertEquals(threeCaches.cache123.myNodeId, line123.getOwner());
             CacheLine line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNull(line456);
@@ -177,6 +177,58 @@ public class CacheTest {
             assertEquals(CacheLineState.INVALID, line123.getState());
             assertEquals(threeCaches.cache456.myNodeId, line123.getOwner());
             // but as it turns out cache 789 never heard about the change in ownership
+            assertEquals(threeCaches.cache123.myNodeId, line789.getOwner());
+        } finally {
+            closeThreeCaches(threeCaches);
+        }
+    }
+
+    @Test
+    public void testOwnershipMoveInvalidate() throws IOException {
+        ThreeCaches threeCaches = createCluster();
+        String testData = "testing_test";
+        try {
+            // set a line in cache123 and verify all other caches
+            // we expect nobody else to know about this cache line
+            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes());
+            ByteBuf localBB = threeCaches.cache123.get(newCacheLineId);
+            // TODO - fix ref count
+            assertEquals(1, localBB.refCnt());
+            assertEqualsBites(testData.getBytes(), localBB);
+            CacheLine line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
+            assertNotNull(line123);
+            assertEquals(CacheLineState.EXCLUSIVE, line123.getState());
+            assertEquals(threeCaches.cache123.myNodeId, line123.getOwner());
+            CacheLine line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
+            assertNull(line456);
+            CacheLine line789 = threeCaches.cache789.innerGetLineLocally(newCacheLineId);
+            assertNull(line789);
+            threeCaches.cache789.get(newCacheLineId);
+            line789 = threeCaches.cache789.innerGetLineLocally(newCacheLineId);
+            assertNotNull(line789);
+
+            // transfer ownership to cache456
+            ByteBuf remoteBB = threeCaches.cache456.getx(newCacheLineId);
+            // TODO - fix ref count
+            assertEquals(1, remoteBB.refCnt());
+            assertEqualsBites(testData.getBytes(), remoteBB);
+            line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
+            assertNotNull(line456);
+            // since there are no sharers this line will be in status EXCLUSIVE
+            assertEquals(CacheLineState.OWNED, line456.getState());
+            assertEquals(threeCaches.cache456.myNodeId, line456.getOwner());
+            line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
+            assertEquals(CacheLineState.INVALID, line123.getState());
+            assertEquals(threeCaches.cache456.myNodeId, line123.getOwner());
+            // but as it turns out cache 789 never heard about the change in ownership
+            assertEquals(threeCaches.cache123.myNodeId, line789.getOwner());
+
+            // now we're trying to get the cache line from 789
+            // that in turn should make a few round trips necessary
+            threeCaches.cache789.get(newCacheLineId);
+            assertEquals(CacheLineState.SHARED, line789.getState());
+            // TODO -- fix that test and find out when to do a remote get
+//            assertEquals(threeCaches.cache456.myNodeId, line789.getOwner());
             assertEquals(threeCaches.cache123.myNodeId, line789.getOwner());
         } finally {
             closeThreeCaches(threeCaches);

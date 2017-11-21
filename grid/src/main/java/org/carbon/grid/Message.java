@@ -243,23 +243,28 @@ abstract class Message implements Persistable {
 
     static class OWNER_CHANGED extends Response {
         short newOwner;
+        // this is used in the handler to compose
+        // a request to the new owner
+        MessageType originalMsgType;
 
         private OWNER_CHANGED() {
             super(MessageType.OWNER_CHANGED);
         }
 
-        OWNER_CHANGED(int requestMessageId, short sender, long lineId, short newOwner) {
+        OWNER_CHANGED(int requestMessageId, short sender, long lineId, short newOwner, MessageType originalType) {
             super(MessageType.OWNER_CHANGED);
             this.messageSequenceNumber = requestMessageId;
             this.sender = sender;
             this.lineId = lineId;
             this.newOwner = newOwner;
+            this.originalMsgType = originalType;
         }
 
         @Override
         public int calcMessagesByteSize() {
             return super.calcMessagesByteSize()
                     + 2       // new owner short
+                    + 1       // original message type byte
                     ;
         }
 
@@ -267,12 +272,14 @@ abstract class Message implements Persistable {
         public void write(MessageOutput out) throws IOException {
             super.write(out);
             out.writeShort(newOwner);
+            out.writeByte(originalMsgType.ordinal);
         }
 
         @Override
         public void read(MessageInput in) throws IOException {
             super.read(in);
             newOwner = in.readShort();
+            originalMsgType = MessageType.fromByte(in.readByte());
         }
     }
 
