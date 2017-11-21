@@ -18,7 +18,9 @@ package org.carbon.grid;
 
 /**
  * MOESI cache line transition states
- * see http://developer.amd.com/wordpress/media/2012/10/24593_APM_v21.pdf for more details
+ * see
+ * http://developer.amd.com/wordpress/media/2012/10/24593_APM_v21.pdf
+ * for more details
  */
 enum CacheLineState {
     // A cache line in the invalid state does not hold a valid copy of the data.
