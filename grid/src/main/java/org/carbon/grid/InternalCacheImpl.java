@@ -277,6 +277,11 @@ class InternalCacheImpl implements InternalCache, Closeable {
 
     private void handleOWNER_CHANGED(Message.OWNER_CHANGED ownerChanged) {
         logger.info("cache handler {} ownerChanged: {}", this, ownerChanged);
+        CacheLine line = shared.get(ownerChanged.lineId);
+        if (line != null) {
+            line.setState(CacheLineState.INVALID);
+            line.setOwner(ownerChanged.newOwner);
+        }
     }
 
     // TODO -- this needs more work obviously
