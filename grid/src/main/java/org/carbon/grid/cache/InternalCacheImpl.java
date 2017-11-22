@@ -420,31 +420,28 @@ class InternalCacheImpl implements InternalCache, Closeable {
 
     private CacheLine getxLineRemotely(long lineId) throws IOException {
         Message.GETX getx = new Message.GETX(myNodeId, lineId);
-        CacheLine line = getLineLocally(lineId);
-        if (line != null) {
-            innerUnicast(line.getOwner(), getx);
-        } else {
-            line = new CacheLine(lineId, -1, (short)-1, CacheLineState.INVALID, null);
-            shared.put(lineId, line);
-            innerBroadcast(getx);
-        }
-        return getLineLocally(lineId);
+        return innerGenericGetLineRemotely(getx);
     }
 
     private CacheLine getLineRemotely(long lineId) throws IOException {
+        Message.GET get = new Message.GET(comms.myNodeId, lineId);
+        return innerGenericGetLineRemotely(get);
+    }
+
+    private CacheLine innerGenericGetLineRemotely(Message anyGetMessage) throws IOException {
         // it might be worth checking the shared map to see whether
         // we find a stub but the line is invalid
-        Message.GET get = new Message.GET(comms.myNodeId, lineId);
-        CacheLine line = shared.get(lineId);
+        long lineId = anyGetMessage.lineId;
+        CacheLine line = getLineLocally(lineId);
         if (line != null) {
             // AHA!!
-            innerUnicast(line.getOwner(), get);
+            innerUnicast(line.getOwner(), anyGetMessage);
         } else {
             // nope we don't know anything
             // we gotta find out where this thing is first
             line = new CacheLine(lineId, -1, (short)-1, CacheLineState.INVALID, null);
             shared.put(lineId, line);
-            innerBroadcast(get);
+            innerBroadcast(anyGetMessage);
         }
         return getLineLocally(lineId);
     }
