@@ -87,11 +87,10 @@ class CacheLine {
         return (data != null) ? data.resetReaderIndex().asReadOnly() : Unpooled.EMPTY_BUFFER;
     }
 
+    // releases the backing ByteBuf before flipping the pointers
     void setData(ByteBuf data) {
         version++;
-        if (this.data != null) {
-            this.data.release();
-        }
+        releaseData();
         this.data = data;
     }
 

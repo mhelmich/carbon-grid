@@ -17,35 +17,85 @@
 package org.carbon.grid.cache;
 
 import io.netty.buffer.ByteBuf;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 
+/**
+ * This class is obviously NOT THREAD SAFE!
+ */
 class TransactionImpl implements Transaction, Closeable {
-    private final InternalCache cache;
+    private final static Logger logger = LoggerFactory.getLogger(InternalCacheImpl.class);
+    private final InternalCacheImpl cache;
+    private final Map<Long, Undo> undoInfo = new HashMap<>();
+    private final List<Long> lockedLines = new LinkedList<>();
+    private final List<Message> messagesToSend = new LinkedList<>();
 
-    TransactionImpl(InternalCache cache) {
+    TransactionImpl(InternalCacheImpl cache) {
         this.cache = cache;
     }
 
     void recordUndo(CacheLine line, ByteBuf newBuffer) {
-
+        recordUndo(line.getId(), line.getVersion(), newBuffer);
     }
 
-    void recordUndo(long lineId, int version, ByteBuf buffer) {
+    void recordUndo(long lineId, int version, ByteBuf newBuffer) {
+        addToLockedLines(lineId);
+        undoInfo.put(lineId, new Undo(lineId, version, newBuffer));
+    }
 
+    void recordMessageToSend(Message msg) {
+        messagesToSend.add(msg);
     }
 
     void addToLockedLines(long lineId) {
-
+        lockedLines.add(lineId);
     }
 
     void commit() {
-
+        try {
+            // make all data changes
+            for (Undo undo : undoInfo.values()) {
+                CacheLine line = cache.innerGetLineLocally(undo.lineId);
+                line.setVersion(undo.version);
+                line.setData(undo.buffer);
+            }
+            // TODO -- send all messages
+        } finally {
+            // release all lines
+            releaseAllLines();
+        }
     }
 
     void rollback() {
+        try {
+            for (Undo undoInfo : undoInfo.values()) {
+                try {
+                    undoInfo.buffer.release();
+                } catch (Exception xcp) {
+                    logger.error("", xcp);
+                }
+            }
+        } finally {
+            releaseAllLines();
+        }
+    }
 
+    private void releaseAllLines() {
+        for (long lineId : lockedLines) {
+            CacheLine line = cache.innerGetLineLocally(lineId);
+            try {
+                line.unlock();
+            } catch (Exception xcp) {
+                logger.error("", xcp);
+            }
+        }
     }
 
     @Override

@@ -309,6 +309,22 @@ class InternalCacheImpl implements InternalCache, Closeable {
         }
     }
 
+
+
+
+    /////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////
+    /////////////////////////////////////////////
+    //                       NORTH OF HERE IS ASYNC NETTY CODE
+    //           MESSAGE HANDLERS AND ALL CODE THAT BLOCKS NETTY THREADS
+    //                         NETTY CODE CANNOT BLOCK !!!
+    //                   SOUTH OF HERE IS CUSTOMER FACING API CODE
+    //            CUSTOMER-FACING CODE CAN BLOCK (WAIT ON FUTURES, ETC.)
+
+
+
+
     // TODO -- this needs more work obviously
     private long nextClusterUniqueCacheLineId() {
         long newId = random.nextLong();
@@ -398,6 +414,10 @@ class InternalCacheImpl implements InternalCache, Closeable {
         put(lineId, Unpooled.wrappedBuffer(buffer), txn);
     }
 
+    public Transaction newTransaction() {
+        return new TransactionImpl(this);
+    }
+
     private CacheLine getxLineRemotely(long lineId) throws IOException {
         Message.GETX getx = new Message.GETX(myNodeId, lineId);
         CacheLine line = getLineLocally(lineId);
@@ -465,6 +485,16 @@ class InternalCacheImpl implements InternalCache, Closeable {
             line = shared.get(lineId);
         }
         return line;
+    }
+
+    void makeUncommittedChange(long lineId, ByteBuf buffer, TransactionImpl txn) {
+        CacheLine lineToChange = owned.get(lineId);
+        assert lineToChange != null;
+        // you can only make changes if you're the exclusive holder of this cache line
+        if (!CacheLineState.EXCLUSIVE.equals(lineToChange.getState())) {
+            throw new IllegalStateException("Cache line " + lineId + " is about to be changed but it's in state " + lineToChange.getState());
+        }
+        txn.recordUndo(lineToChange, buffer);
     }
 
     @Override
