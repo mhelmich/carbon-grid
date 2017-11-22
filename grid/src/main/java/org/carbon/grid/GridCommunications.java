@@ -140,7 +140,8 @@ class GridCommunications implements Closeable {
     // in those situations receiving a change_ownership response is followed by sending
     // a get or getx request
     void reactToResponse(Message.Response responseIReceived, short toNode, Message.Request requestToSend) {
-        long hash = hashNodeIdMessageSeq(responseIReceived.getSender(), responseIReceived.getMessageSequenceNumber());
+        // search for the message that I sent myself back in the day to carry over the associated future
+        long hash = hashNodeIdMessageSeq(myNodeId, responseIReceived.getMessageSequenceNumber());
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
         if (lAndM == null) {
             logger.warn("{} [reactToResponse] won't react hash {} message {}", myNodeId, hash, responseIReceived);
@@ -177,9 +178,8 @@ class GridCommunications implements Closeable {
     // it returns true if the message was indeed added to the backlog
     // it returns false if the message couldn't be added to the backlog
     boolean addToCacheLineBacklog(Message message) {
-        NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> hashToBacklog = getBacklogMap();
         long backlogHash = hashNodeIdCacheLineId(message.sender, message.lineId);
-        ConcurrentLinkedQueue<Message> backlog = hashToBacklog.get(backlogHash);
+        ConcurrentLinkedQueue<Message> backlog = cacheLineIdToBacklog.get(backlogHash);
         if (backlog == null) {
             logger.warn("you asked for message {} to be added to the backlog but there was none", message);
             return false;
@@ -195,11 +195,10 @@ class GridCommunications implements Closeable {
     // ASYNC CALLBACK FROM NETTY
     @VisibleForTesting
     void handleMessage(Message msg) {
-        NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> hashToBacklog = getBacklogMap();
         long backlogHash = hashNodeIdCacheLineId(msg.sender, msg.lineId);
         // this queue acts as token to indicate that a different thread is processing a message for this cache line
         // is also buffers all incoming messages for this cache line in a queue
-        ConcurrentLinkedQueue<Message> backlog = hashToBacklog.putIfAbsent(backlogHash, new ConcurrentLinkedQueue<>());
+        ConcurrentLinkedQueue<Message> backlog = cacheLineIdToBacklog.putIfAbsent(backlogHash, new ConcurrentLinkedQueue<>());
         if (backlog == null) {
             logger.info("{} [handleMessage] {} with hash {}", myNodeId, msg, backlogHash);
             // go ahead and process
@@ -207,19 +206,19 @@ class GridCommunications implements Closeable {
 
             // after processing this particular message went down well,
             // this thread is somewhat responsible for cleaning out the backlog of messages it caused
-            backlog = hashToBacklog.get(backlogHash);
+            backlog = cacheLineIdToBacklog.get(backlogHash);
             while (backlog.peek() != null) {
                 Message backlogMsg = backlog.poll();
                 logger.info("{} processing backlog message {} with hash {}", myNodeId, backlogMsg, backlogHash);
                 innerHandleMessage(backlogMsg);
                 // remove the hash if the backlog is empty
                 // this runs atomically
-                removeIfEmpty(backlogHash, hashToBacklog);
+                removeIfEmpty(backlogHash, cacheLineIdToBacklog);
             }
 
             // remove the hash if the backlog is empty
             // this runs atomically
-            removeIfEmpty(backlogHash, hashToBacklog);
+            removeIfEmpty(backlogHash, cacheLineIdToBacklog);
         } else {
             backlog.add(msg);
             logger.info("{} putting message into the backlog {} with hash {}", myNodeId, msg, backlogHash);
@@ -232,13 +231,9 @@ class GridCommunications implements Closeable {
         );
     }
 
-    @VisibleForTesting
-    NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> getBacklogMap() {
-        return cacheLineIdToBacklog;
-    }
-
     // generates the hash for the latch map
-    private long hashNodeIdMessageSeq(short nodeId, int messageSequence) {
+    @VisibleForTesting
+    long hashNodeIdMessageSeq(short nodeId, int messageSequence) {
         return Hashing
                 .murmur3_128()
                 .newHasher()
@@ -353,7 +348,7 @@ class GridCommunications implements Closeable {
         return "myNodeId: " + myNodeId + " myServerPort: " + myServerPort;
     }
 
-    private static class LatchAndMessage {
+    static class LatchAndMessage {
         final CompletableFuture<Void> latch;
         final Message msg;
         LatchAndMessage(CompletableFuture<Void> latch, Message msg) {

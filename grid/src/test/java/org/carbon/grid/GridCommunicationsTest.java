@@ -16,11 +16,15 @@
 
 package org.carbon.grid;
 
-import org.junit.Ignore;
+import io.netty.channel.ChannelFuture;
+import org.cliffc.high_scale_lib.NonBlockingHashMap;
+import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.junit.Test;
 import org.mockito.Mockito;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -35,11 +39,12 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.when;
 
 public class GridCommunicationsTest {
     private final static int TIMEOUT = 55;
     @Test
-    public void testBacklog() throws IOException, InterruptedException {
+    public void testBacklog() throws IOException, InterruptedException, NoSuchFieldException, IllegalAccessException {
         short sender = 444;
         long lineId = 1234567890;
         InternalCache cacheMock = Mockito.mock(InternalCache.class);
@@ -59,11 +64,12 @@ public class GridCommunicationsTest {
         ExecutorService es = Executors.newFixedThreadPool(1);
         try {
             try (GridCommunications comm = new GridCommunications(sender, 4444, cacheMock)) {
+                NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> backlogMap = getBacklogMap(comm);
                 Message.ACK ack1 = new Message.ACK(Integer.MAX_VALUE, sender, lineId);
                 Message.ACK ack2 = new Message.ACK(Integer.MIN_VALUE, sender, lineId);
 
-                assertEquals(0, comm.getBacklogMap().size());
-                assertFalse(comm.getBacklogMap().contains(comm.hashNodeIdCacheLineId(ack1.sender, ack1.lineId)));
+                assertEquals(0, backlogMap.size());
+                assertFalse(backlogMap.contains(comm.hashNodeIdCacheLineId(ack1.sender, ack1.lineId)));
 
                 es.submit(() -> {
                     comm.handleMessage(ack2);
@@ -72,20 +78,20 @@ public class GridCommunicationsTest {
                 });
                 assertTrue(threadEnteredHandler.await(TIMEOUT, TimeUnit.SECONDS));
 
-                assertEquals(1, comm.getBacklogMap().size());
-                ConcurrentLinkedQueue<Message> backlog = comm.getBacklogMap().get(comm.hashNodeIdCacheLineId(ack1.sender, ack1.lineId));
+                assertEquals(1, getBacklogMap(comm).size());
+                ConcurrentLinkedQueue<Message> backlog = backlogMap.get(comm.hashNodeIdCacheLineId(ack1.sender, ack1.lineId));
                 assertNotNull(backlog);
                 assertEquals(0, backlog.size());
 
                 comm.handleMessage(ack1);
-                assertEquals(1, comm.getBacklogMap().size());
+                assertEquals(1, backlogMap.size());
                 assertEquals(1, backlog.size());
 
                 latch.countDown();
                 assertTrue(threadFinishedHandling.await(TIMEOUT, TimeUnit.SECONDS));
 
                 assertEquals(2, count.get());
-                backlog = comm.getBacklogMap().get(comm.hashNodeIdCacheLineId(ack1.sender, ack1.lineId));
+                backlog = backlogMap.get(comm.hashNodeIdCacheLineId(ack1.sender, ack1.lineId));
                 assertNull(backlog);
             }
         } finally {
@@ -94,13 +100,13 @@ public class GridCommunicationsTest {
     }
 
     @Test
-    public void testAddingToBacklogFromHandler() throws IOException, InterruptedException {
+    public void testAddingToBacklogFromHandler() throws IOException, InterruptedException, NoSuchFieldException, IllegalAccessException {
         short sender = 444;
         long lineId = 1234567890;
         InternalCache cacheMock = Mockito.mock(InternalCache.class);
         CountDownLatch threadEnteredHandler = new CountDownLatch(1);
         CountDownLatch threadBlocking = new CountDownLatch(1);
-        CountDownLatch threadFinishedProcessing= new CountDownLatch(1);
+        CountDownLatch threadFinishedProcessing = new CountDownLatch(1);
         doAnswer(inv -> {
             threadEnteredHandler.countDown();
             threadBlocking.await(TIMEOUT, TimeUnit.SECONDS);
@@ -110,9 +116,10 @@ public class GridCommunicationsTest {
         ExecutorService es = Executors.newFixedThreadPool(1);
         try {
             try (GridCommunications comm = new GridCommunications(sender, 4444, cacheMock)) {
+                NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> backlogMap = getBacklogMap(comm);
                 Message.ACK ack1 = new Message.ACK(Integer.MAX_VALUE, sender, lineId);
                 Message.ACK ack2 = new Message.ACK(Integer.MIN_VALUE, sender, lineId);
-                ConcurrentLinkedQueue<Message> backlog = comm.getBacklogMap().get(comm.hashNodeIdCacheLineId(sender, lineId));
+                ConcurrentLinkedQueue<Message> backlog = backlogMap.get(comm.hashNodeIdCacheLineId(sender, lineId));
                 assertNull(backlog);
 
                 es.submit(() -> {
@@ -122,14 +129,14 @@ public class GridCommunicationsTest {
                 });
 
                 assertTrue(threadEnteredHandler.await(TIMEOUT, TimeUnit.SECONDS));
-                backlog = comm.getBacklogMap().get(comm.hashNodeIdCacheLineId(sender, lineId));
+                backlog = backlogMap.get(comm.hashNodeIdCacheLineId(sender, lineId));
                 assertNotNull(backlog);
                 assertEquals(0, backlog.size());
                 assertTrue(comm.addToCacheLineBacklog(ack1));
                 assertEquals(1, backlog.size());
                 threadBlocking.countDown();
                 assertTrue(threadFinishedProcessing.await(TIMEOUT, TimeUnit.SECONDS));
-                backlog = comm.getBacklogMap().get(comm.hashNodeIdCacheLineId(sender, lineId));
+                backlog = backlogMap.get(comm.hashNodeIdCacheLineId(sender, lineId));
                 assertNull(backlog);
             }
         } finally {
@@ -137,22 +144,52 @@ public class GridCommunicationsTest {
         }
     }
 
-    /**
-     * TODO -- actually build this test
-     */
     @Test
-    @Ignore
-    public void testReactToResponse() throws IOException {
+    public void testReactToResponse() throws IOException, InterruptedException, NoSuchFieldException, IllegalAccessException {
         short sender = 444;
         short newOwner = 888;
         long lineId = 1234567890;
         int messageRequestId = 987654321;
         InternalCache cacheMock = Mockito.mock(InternalCache.class);
 
+        TcpGridClient mockClient = Mockito.mock(TcpGridClient.class);
+        ChannelFuture mockFuture = Mockito.mock(ChannelFuture.class);
+        when(mockClient.send(any(Message.class))).thenReturn(mockFuture);
+
         Message.GET requestToSend = new Message.GET(sender, lineId);
         Message.OWNER_CHANGED oc1 = new Message.OWNER_CHANGED(messageRequestId, (short)999, lineId, newOwner, MessageType.GET);
         try (GridCommunications comm = new GridCommunications(sender, 4444, cacheMock)) {
+
+            getNodeIdToClient(comm).put(newOwner, mockClient);
+            NonBlockingHashMapLong<GridCommunications.LatchAndMessage> msgIdToLatch = getMessageIdToLatchAndMessage(comm);
+            Message.GET get = new Message.GET(sender, lineId);
+            get.messageSequenceNumber = messageRequestId;
+
+            CompletableFuture<Void> latch = new CompletableFuture<>();
+            msgIdToLatch.put(comm.hashNodeIdMessageSeq(comm.myNodeId, oc1.getMessageSequenceNumber()), new GridCommunications.LatchAndMessage(latch, get));
             comm.reactToResponse(oc1, oc1.newOwner, requestToSend);
+            assertNotNull(msgIdToLatch.get(comm.hashNodeIdMessageSeq(oc1.newOwner, requestToSend.getMessageSequenceNumber())));
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> getBacklogMap(GridCommunications comms) throws NoSuchFieldException, IllegalAccessException {
+        Field field = GridCommunications.class.getDeclaredField("cacheLineIdToBacklog");
+        field.setAccessible(true);
+        return (NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>>) field.get(comms);
+    }
+
+    @SuppressWarnings("unchecked")
+    private NonBlockingHashMapLong<GridCommunications.LatchAndMessage> getMessageIdToLatchAndMessage(GridCommunications comms) throws NoSuchFieldException, IllegalAccessException {
+        Field field = GridCommunications.class.getDeclaredField("messageIdToLatchAndMessage");
+        field.setAccessible(true);
+        return (NonBlockingHashMapLong<GridCommunications.LatchAndMessage>) field.get(comms);
+    }
+
+    @SuppressWarnings("unchecked")
+    private NonBlockingHashMap<Short, TcpGridClient> getNodeIdToClient(GridCommunications comms) throws IllegalAccessException, NoSuchFieldException {
+        Field field = GridCommunications.class.getDeclaredField("nodeIdToClient");
+        field.setAccessible(true);
+        return (NonBlockingHashMap<Short, TcpGridClient>) field.get(comms);
     }
 }
