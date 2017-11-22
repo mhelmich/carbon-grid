@@ -290,7 +290,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
             line.setState(CacheLineState.INVALID);
             line.setOwner(ownerChanged.newOwner);
 
-            Message.Request messageToSend;
+            final Message.Request messageToSend;
             switch (ownerChanged.originalMsgType) {
                 case GET:
                     messageToSend = new Message.GET(myNodeId, ownerChanged.lineId);

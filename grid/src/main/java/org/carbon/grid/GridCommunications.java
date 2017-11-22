@@ -143,7 +143,6 @@ class GridCommunications implements Closeable {
         long hash = hashNodeIdMessageSeq(responseIReceived.getSender(), responseIReceived.getMessageSequenceNumber());
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
         if (lAndM == null) {
-            // TODO -- find the root cause for this happening all the time
             logger.warn("{} [reactToResponse] won't react hash {} message {}", myNodeId, hash, responseIReceived);
             return;
         }
@@ -249,7 +248,12 @@ class GridCommunications implements Closeable {
                 .asLong();
     }
 
-    // generates the hash for the cache line backlog
+    // Generates the hash for the cache line backlog.
+    // This also controls the concurrency in the cache.
+    // If the hash is the cache line id only that means,
+    // there can be max one thread per cache line.
+    // If the hash is made up of node id and cache line id,
+    // there can be one thread per cache line per node.
     @VisibleForTesting
     long hashNodeIdCacheLineId(short nodeId, long cacheLineId) {
         return cacheLineId;
@@ -303,7 +307,6 @@ class GridCommunications implements Closeable {
         long hash = hashNodeIdMessageSeq(response.getSender(), response.getMessageSequenceNumber());
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
         if (lAndM == null) {
-            // TODO -- find the root cause for this to happen too often
             logger.info("{} [ackResponse] failure id {} sender {} hash {} message {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash, response);
         } else {
             logger.info("{} [ackResponse] success id {} sender {} hash {} message {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash, response);
