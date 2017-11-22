@@ -32,6 +32,10 @@ class CompositeFuture implements Future<Void> {
         this.futures = futures;
     }
 
+    CompositeFuture(Collection<Future<Void>> futures, MessageType... messagesToWaitFor) {
+        this.futures = futures;
+    }
+
     @Override
     public boolean cancel(boolean mayInterruptIfRunning) {
         return futures.stream().map(f -> f.cancel(mayInterruptIfRunning)).reduce(true, (a,b) -> a && b);

@@ -137,6 +137,14 @@ class GridCommunications implements Closeable {
         return new CompositeFuture(futures);
     }
 
+    Future<Void> broadcast(Message msg, MessageType... waitForAnswers) throws IOException {
+        List<Future<Void>> futures = new LinkedList<>();
+        for (Short nodeId : nodeIdToClient.keySet()) {
+            futures.add(send(nodeId, msg.copy()));
+        }
+        return new CompositeFuture(futures);
+    }
+
     // this method is supposed to used when handling a response requires sending another request
     // an example can be handling ownership of cache lines when processing an ownership change
     // still requires getting the cache line in question
