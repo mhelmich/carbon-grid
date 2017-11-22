@@ -64,6 +64,9 @@ class GridCommunications implements Closeable {
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
 
     private final NonBlockingHashMapLong<LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMapLong<>();
+    // TODO -- the map holding all connections could morph into a guava cache
+    // we'd need to keep track of the connection info separately though
+    // that could reduce the number of open connections if we don't really need them
     private final NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient = new NonBlockingHashMap<>();
     private final NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> cacheLineIdToBacklog = new NonBlockingHashMapLong<>();
 
