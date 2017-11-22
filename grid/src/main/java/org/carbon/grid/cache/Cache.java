@@ -26,14 +26,14 @@ import java.nio.ByteBuffer;
  */
 public interface Cache {
     int getMaxCacheLineSize();
-    long allocateEmpty() throws IOException;
-    long allocateWithData(ByteBuf buffer) throws IOException;
-    long allocateWithData(ByteBuffer buffer) throws IOException;
-    long allocateWithData(byte[] bytes) throws IOException;
+    long allocateEmpty(Transaction txn) throws IOException;
+    long allocateWithData(ByteBuf buffer, Transaction txn) throws IOException;
+    long allocateWithData(ByteBuffer buffer, Transaction txn) throws IOException;
+    long allocateWithData(byte[] bytes, Transaction txn) throws IOException;
     ByteBuf get(long lineId) throws IOException;
     ByteBuffer getBB(long lineId) throws IOException;
-    ByteBuf getx(long lineId) throws IOException;
-    ByteBuffer getxBB(long lineId) throws IOException;
-    void put(long lineId, ByteBuf buffer);
-    void put(long lineId, ByteBuffer buffer);
+    ByteBuf getx(long lineId, Transaction txn) throws IOException;
+    ByteBuffer getxBB(long lineId, Transaction txn) throws IOException;
+    void put(long lineId, ByteBuf buffer, Transaction txn);
+    void put(long lineId, ByteBuffer buffer, Transaction txn);
 }

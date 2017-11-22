@@ -54,7 +54,7 @@ public class CacheTest {
         ThreeCaches threeCaches = createCluster();
         String testData = "testing_test";
         try {
-            long newBlockId = threeCaches.cache123.allocateWithData(testData.getBytes());
+            long newBlockId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
             ByteBuf localBB = threeCaches.cache123.get(newBlockId);
             assertEqualsBites(testData.getBytes(), localBB);
 
@@ -76,7 +76,7 @@ public class CacheTest {
     @Test
     public void testAllocateEmpty() throws IOException {
         try (InternalCacheImpl cache123 = new InternalCacheImpl(123, 5555)) {
-            long emptyBlock = cache123.allocateEmpty();
+            long emptyBlock = cache123.allocateEmpty(null);
             ByteBuf buffer = cache123.get(emptyBlock);
             assertNotNull(buffer);
             assertEquals(0, buffer.readableBytes());
@@ -89,7 +89,7 @@ public class CacheTest {
         String testData = "testing_test";
         try {
             // set a line in cache123 and verify both caches
-            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes());
+            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
             ByteBuf localBB = threeCaches.cache123.get(newCacheLineId);
             assertEqualsBites(testData.getBytes(), localBB);
             CacheLine line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
@@ -112,7 +112,7 @@ public class CacheTest {
             assertTrue(line123.getSharers().size() == 1);
 
             // transfer ownership to cache456
-            ByteBuf remoteBB = threeCaches.cache456.getx(newCacheLineId);
+            ByteBuf remoteBB = threeCaches.cache456.getx(newCacheLineId, null);
             assertEqualsBites(testData.getBytes(), remoteBB);
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNotNull(line456);
@@ -135,7 +135,7 @@ public class CacheTest {
         try {
             // set a line in cache123 and verify all other caches
             // we expect nobody else to know about this cache line
-            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes());
+            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
             ByteBuf localBB = threeCaches.cache123.get(newCacheLineId);
             assertEqualsBites(testData.getBytes(), localBB);
             CacheLine line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
@@ -166,7 +166,7 @@ public class CacheTest {
             assertTrue(line123.getSharers().size() == 2);
 
             // transfer ownership to cache456
-            ByteBuf remoteBB = threeCaches.cache456.getx(newCacheLineId);
+            ByteBuf remoteBB = threeCaches.cache456.getx(newCacheLineId, null);
             assertEqualsBites(testData.getBytes(), remoteBB);
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNotNull(line456);
@@ -190,7 +190,7 @@ public class CacheTest {
         try {
             // set a line in cache123 and verify all other caches
             // we expect nobody else to know about this cache line
-            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes());
+            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
             ByteBuf localBB = threeCaches.cache123.get(newCacheLineId);
             // TODO - fix ref count
             assertEquals(1, localBB.refCnt());
@@ -208,7 +208,7 @@ public class CacheTest {
             assertNotNull(line789);
 
             // transfer ownership to cache456
-            ByteBuf remoteBB = threeCaches.cache456.getx(newCacheLineId);
+            ByteBuf remoteBB = threeCaches.cache456.getx(newCacheLineId, null);
             // TODO - fix ref count
             assertEquals(1, remoteBB.refCnt());
             assertEqualsBites(testData.getBytes(), remoteBB);

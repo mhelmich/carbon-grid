@@ -322,7 +322,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     @Override
-    public long allocateEmpty() throws IOException {
+    public long allocateEmpty(Transaction txn) throws IOException {
         long newLineId = nextClusterUniqueCacheLineId();
         CacheLine line = new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, null);
         line.setState(CacheLineState.OWNED);
@@ -331,7 +331,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     @Override
-    public long allocateWithData(ByteBuf buffer) throws IOException {
+    public long allocateWithData(ByteBuf buffer, Transaction txn) throws IOException {
         if (buffer.capacity() > getMaxCacheLineSize()) throw new IllegalArgumentException("Buffer too big! The buffer can only have a max size of " + getMaxCacheLineSize() + " bytes");
         CacheLine line = wrap(buffer);
         owned.put(line.getId(), line);
@@ -339,16 +339,16 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     @Override
-    public long allocateWithData(ByteBuffer buffer) throws IOException {
-        return allocateWithData(Unpooled.wrappedBuffer(buffer));
+    public long allocateWithData(ByteBuffer buffer, Transaction txn) throws IOException {
+        return allocateWithData(Unpooled.wrappedBuffer(buffer), txn);
     }
 
     @Override
-    public long allocateWithData(byte[] bytes) throws IOException {
+    public long allocateWithData(byte[] bytes, Transaction txn) throws IOException {
         ByteBuf buffer = Unpooled
                 .directBuffer(bytes.length)
                 .writeBytes(bytes);
-        return allocateWithData(buffer);
+        return allocateWithData(buffer, txn);
     }
 
     private CacheLine wrap(ByteBuf bytebuf) {
@@ -379,23 +379,23 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     @Override
-    public ByteBuf getx(long lineId) throws IOException {
+    public ByteBuf getx(long lineId, Transaction txn) throws IOException {
         return getxLineRemotely(lineId).resetReaderAndGetReadOnlyData();
     }
 
     @Override
-    public ByteBuffer getxBB(long lineId) throws IOException {
-        return getx(lineId).nioBuffer();
+    public ByteBuffer getxBB(long lineId, Transaction txn) throws IOException {
+        return getx(lineId, txn).nioBuffer();
     }
 
     @Override
-    public void put(long lineId, ByteBuf buffer) {
+    public void put(long lineId, ByteBuf buffer, Transaction txn) {
 
     }
 
     @Override
-    public void put(long lineId, ByteBuffer buffer) {
-        put(lineId, Unpooled.wrappedBuffer(buffer));
+    public void put(long lineId, ByteBuffer buffer, Transaction txn) {
+        put(lineId, Unpooled.wrappedBuffer(buffer), txn);
     }
 
     private CacheLine getxLineRemotely(long lineId) throws IOException {
