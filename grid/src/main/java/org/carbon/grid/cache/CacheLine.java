@@ -37,8 +37,9 @@ class CacheLine {
     private ByteBuf data;
     private final AtomicBoolean isLocked = new AtomicBoolean(false);
 
-    CacheLine(long id, int version, short owner, ByteBuf data) {
+    CacheLine(long id, int version, short owner, CacheLineState state, ByteBuf data) {
         this.id = id;
+        this.state = state;
         this.version = version;
         this.owner = owner;
         this.data = data;

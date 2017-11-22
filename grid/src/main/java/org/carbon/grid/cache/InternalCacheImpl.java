@@ -220,11 +220,8 @@ class InternalCacheImpl implements InternalCache, Closeable {
         if (oldLine == null) {
             // looks like I didn't have this log line before
             // pure luxury, I can create a brand new object
-            CacheLine newLine = new CacheLine(putx.lineId, putx.version, myNodeId, putx.data);
+            CacheLine newLine = new CacheLine(putx.lineId, putx.version, myNodeId, putx.sharers.isEmpty() ? CacheLineState.EXCLUSIVE : CacheLineState.OWNED, putx.data);
             newLine.setSharers(putx.sharers);
-            newLine.setState(
-                    newLine.getSharers().isEmpty() ? CacheLineState.EXCLUSIVE : CacheLineState.OWNED
-            );
             owned.put(putx.lineId, newLine);
         } else {
             // promote line from shared to owned
@@ -252,8 +249,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
         // this is fairly straight forward
         // just take the new data and shove it in
         // TODO -- make sure we're keeping the same object around (mostly for locking reasons)
-        CacheLine line = new CacheLine(put.lineId, put.version, put.getSender(), put.data);
-        line.setState(CacheLineState.SHARED);
+        CacheLine line = new CacheLine(put.lineId, put.version, put.getSender(), CacheLineState.SHARED, put.data);
         shared.put(line.getId(), line);
     }
 
@@ -324,8 +320,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     @Override
     public long allocateEmpty(Transaction txn) throws IOException {
         long newLineId = nextClusterUniqueCacheLineId();
-        CacheLine line = new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, null);
-        line.setState(CacheLineState.OWNED);
+        CacheLine line = new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, CacheLineState.OWNED, null);
         owned.put(line.getId(), line);
         return line.getId();
     }
@@ -353,8 +348,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
 
     private CacheLine wrap(ByteBuf bytebuf) {
         long newLineId = nextClusterUniqueCacheLineId();
-        CacheLine line = new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, bytebuf);
-        line.setState(CacheLineState.EXCLUSIVE);
+        CacheLine line = new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, CacheLineState.EXCLUSIVE, bytebuf);
         return line;
     }
 
@@ -404,6 +398,8 @@ class InternalCacheImpl implements InternalCache, Closeable {
         if (line != null) {
             innerUnicast(line.getOwner(), getx);
         } else {
+            line = new CacheLine(lineId, -1, (short)-1, CacheLineState.INVALID, null);
+            shared.put(lineId, line);
             innerBroadcast(getx);
         }
         return getLineLocally(lineId);
@@ -420,6 +416,8 @@ class InternalCacheImpl implements InternalCache, Closeable {
         } else {
             // nope we don't know anything
             // we gotta find out where this thing is first
+            line = new CacheLine(lineId, -1, (short)-1, CacheLineState.INVALID, null);
+            shared.put(lineId, line);
             innerBroadcast(get);
         }
         return getLineLocally(lineId);
