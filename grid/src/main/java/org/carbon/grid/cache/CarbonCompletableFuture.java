@@ -20,20 +20,18 @@ import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class CarbonFuture implements Future<Void> {
-    private final CompletableFuture<Void> latch = new CompletableFuture<>();
-    private NonBlockingHashMap<MessageType, AtomicInteger> typeToCount;
+public class CarbonCompletableFuture<T> extends CompletableFuture<T> {
+    private final NonBlockingHashMap<MessageType, AtomicInteger> typeToCount;
 
-    CarbonFuture() {
+    CarbonCompletableFuture() {
         this.typeToCount = null;
     }
 
-    CarbonFuture(MessageType... messagesToWaitFor) {
+    CarbonCompletableFuture(MessageType... messagesToWaitFor) {
         typeToCount = new NonBlockingHashMap<>();
         for (MessageType type : messagesToWaitFor) {
             typeToCount.putIfAbsent(type, new AtomicInteger(0));
@@ -43,36 +41,37 @@ public class CarbonFuture implements Future<Void> {
 
     @Override
     public boolean cancel(boolean mayInterruptIfRunning) {
-        return latch.cancel(mayInterruptIfRunning);
+        return super.cancel(mayInterruptIfRunning);
     }
 
     @Override
     public boolean isCancelled() {
-        return latch.isCancelled();
+        return super.isCancelled();
     }
 
     @Override
     public boolean isDone() {
-        return latch.isDone();
+        return super.isDone();
     }
 
     @Override
-    public Void get() throws InterruptedException, ExecutionException {
-        return latch.get();
+    public T get() throws InterruptedException, ExecutionException {
+        return super.get();
     }
 
     @Override
-    public Void get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
-        return latch.get(timeout, unit);
+    public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+        return super.get(timeout, unit);
     }
 
+    @Override
     public boolean completeExceptionally(Throwable ex) {
-        return latch.completeExceptionally(ex);
+        return super.completeExceptionally(ex);
     }
 
-    public boolean complete(MessageType type) {
+    public boolean complete(T value, MessageType type) {
         if (typeToCount == null) {
-            return latch.complete(null);
+            return super.complete(value);
         } else {
             AtomicInteger count = typeToCount.get(type);
             if (count != null) {
@@ -81,7 +80,7 @@ public class CarbonFuture implements Future<Void> {
                 }
             }
 
-            return typeToCount.isEmpty() && latch.complete(null);
+            return typeToCount.isEmpty() && super.complete(value);
         }
     }
 }

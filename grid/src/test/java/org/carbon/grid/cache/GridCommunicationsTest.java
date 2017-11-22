@@ -24,7 +24,6 @@ import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -165,7 +164,7 @@ public class GridCommunicationsTest {
             Message.GET get = new Message.GET(sender, lineId);
             get.messageSequenceNumber = messageRequestId;
 
-            CompletableFuture<Void> latch = new CompletableFuture<>();
+            CarbonCompletableFuture<Void> latch = new CarbonCompletableFuture<>();
             msgIdToLatch.put(comm.hashNodeIdMessageSeq(comm.myNodeId, oc1.getMessageSequenceNumber()), new GridCommunications.LatchAndMessage(latch, get));
             comm.reactToResponse(oc1, oc1.newOwner, requestToSend);
             assertNotNull(msgIdToLatch.get(comm.hashNodeIdMessageSeq(oc1.newOwner, requestToSend.getMessageSequenceNumber())));

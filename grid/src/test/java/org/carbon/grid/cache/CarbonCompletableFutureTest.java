@@ -16,5 +16,5 @@
 
 package org.carbon.grid.cache;
 
-public class CarbonFutureTest {
+public class CarbonCompletableFutureTest {
 }
