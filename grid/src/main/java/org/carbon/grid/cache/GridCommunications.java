@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.carbon.grid;
+package org.carbon.grid.cache;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.hash.Hashing;

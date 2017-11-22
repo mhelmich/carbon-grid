@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.carbon.grid;
+package org.carbon.grid.cache;
 
 /**
  * MOESI cache line transition states

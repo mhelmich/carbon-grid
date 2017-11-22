@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.carbon.grid;
+package org.carbon.grid.cache;
 
 import io.netty.buffer.ByteBuf;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;

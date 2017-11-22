@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.carbon.grid;
+package org.carbon.grid.cache;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;

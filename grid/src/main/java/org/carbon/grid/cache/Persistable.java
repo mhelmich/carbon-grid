@@ -14,7 +14,12 @@
  * limitations under the License.
  */
 
-package org.carbon.grid;
+package org.carbon.grid.cache;
 
-class TransactionImpl implements Transaction {
+import java.io.IOException;
+
+public interface Persistable {
+    int byteSize();
+    void write(MessageOutput out) throws IOException;
+    void read(MessageInput in) throws IOException;
 }

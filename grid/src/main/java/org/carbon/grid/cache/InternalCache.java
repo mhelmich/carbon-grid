@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.carbon.grid;
+package org.carbon.grid.cache;
 
 /**
  * This interface mostly defines handler and dispatcher methods.
