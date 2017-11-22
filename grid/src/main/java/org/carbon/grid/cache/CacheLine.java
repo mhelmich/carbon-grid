@@ -89,7 +89,9 @@ class CacheLine {
 
     void setData(ByteBuf data) {
         version++;
-        this.data.release();
+        if (this.data != null) {
+            this.data.release();
+        }
         this.data = data;
     }
 
