@@ -319,6 +319,11 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     @Override
+    public int getMaxCacheLineSize() {
+        return Integer.MAX_VALUE;
+    }
+
+    @Override
     public long allocateEmpty() throws IOException {
         long newLineId = nextClusterUniqueCacheLineId();
         CacheLine line = new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, null);
@@ -329,6 +334,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
 
     @Override
     public long allocateWithData(ByteBuf buffer) throws IOException {
+        if (buffer.capacity() > getMaxCacheLineSize()) throw new IllegalArgumentException("Buffer too big! The buffer can only have a max size of " + getMaxCacheLineSize() + " bytes");
         CacheLine line = wrap(buffer);
         owned.put(line.getId(), line);
         return line.getId();

@@ -25,6 +25,7 @@ import java.nio.ByteBuffer;
  * The interface to the in-memory cache.
  */
 public interface Cache {
+    int getMaxCacheLineSize();
     long allocateEmpty() throws IOException;
     long allocateWithData(ByteBuf buffer) throws IOException;
     long allocateWithData(ByteBuffer buffer) throws IOException;
