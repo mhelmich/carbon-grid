@@ -45,13 +45,11 @@ import java.util.concurrent.TimeoutException;
  * http://developer.amd.com/wordpress/media/2012/10/24593_APM_v21.pdf
  *
  * ToDo List:
- * -  XXX basic message passing and marshalling logic
- * - build netty encoders and decoders
  * - MOESI coherence protocol implementation
  * - clustering & synchronization (cache line ids, cluster members, ...)
  * - fail over / topology changes / node failures
- * - slab allocation and page management
- * - resilient memory across nodes
+ * - slab allocation and page management (look into what netty gives you in terms o f pooled allocation)
+ * - resilient memory across nodes (striping, backups, ...)
  *
  */
 class InternalCacheImpl implements InternalCache, Closeable {
