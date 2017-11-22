@@ -248,9 +248,16 @@ class InternalCacheImpl implements InternalCache, Closeable {
         logger.info("cache handler {} put: {}", this, put);
         // this is fairly straight forward
         // just take the new data and shove it in
-        // TODO -- make sure we're keeping the same object around (mostly for locking reasons)
-        CacheLine line = new CacheLine(put.lineId, put.version, put.getSender(), CacheLineState.SHARED, put.data);
-        shared.put(line.getId(), line);
+        CacheLine line = shared.get(put.lineId);
+        if (line == null) {
+            line = new CacheLine(put.lineId, put.version, put.getSender(), CacheLineState.SHARED, put.data);
+            shared.put(line.getId(), line);
+        } else {
+            line.setVersion(put.version);
+            line.setOwner(put.sender);
+            line.setState(CacheLineState.SHARED);
+            line.setData(put.data);
+        }
     }
 
     private Message.Response handleINV(Message.INV inv) {
@@ -348,8 +355,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
 
     private CacheLine wrap(ByteBuf bytebuf) {
         long newLineId = nextClusterUniqueCacheLineId();
-        CacheLine line = new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, CacheLineState.EXCLUSIVE, bytebuf);
-        return line;
+        return new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, CacheLineState.EXCLUSIVE, bytebuf);
     }
 
     @Override

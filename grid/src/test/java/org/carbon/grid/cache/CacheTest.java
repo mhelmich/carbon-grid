@@ -242,6 +242,7 @@ public class CacheTest {
     }
 
     private void assertEqualsBites(byte[] bites, ByteBuf buffer) {
+        assertEquals(bites.length, buffer.capacity());
         byte[] bufferBites = getAllBytesFromBuffer(buffer);
         assertTrue(Arrays.equals(bites, bufferBites));
     }

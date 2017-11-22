@@ -326,11 +326,12 @@ class GridCommunications implements Closeable {
     }
 
     private void closeQuietly(Closeable closeable) {
-        if (closeable == null) return;
-        try {
-            closeable.close();
-        } catch (IOException xcp) {
-            logger.error("Error while closing", xcp);
+        if (closeable != null) {
+            try {
+                closeable.close();
+            } catch (IOException xcp) {
+                logger.error("Error while closing", xcp);
+            }
         }
     }
 

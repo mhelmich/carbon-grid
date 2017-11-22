@@ -136,13 +136,14 @@ class CacheLine {
 
     @Override
     public String toString() {
-        return "id: " + id + " state: " + state + " owner: " + owner + " sharers: " + sharers + " data size: " + data.capacity();
+        return "id: " + id + " state: " + state + " owner: " + owner + " sharers: " + sharers + " data size: " + ((data == null) ? 0 : data.capacity());
     }
 
     void lock() {
         while (!isLocked.compareAndSet(false, true)) {
             try {
-                Thread.sleep(1);
+                // give up the thread and try again later
+                Thread.sleep(3);
             } catch (InterruptedException xcp) {
                 throw new RuntimeException(xcp);
             }
