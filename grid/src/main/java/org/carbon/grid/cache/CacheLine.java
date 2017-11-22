@@ -101,7 +101,7 @@ class CacheLine {
     }
 
     void setSharers(Set<Short> sharers) {
-        if (!sharers.isEmpty()) {
+        if (sharers != null && !sharers.isEmpty()) {
             if (this.sharers == null) {
                 this.sharers = new NonBlockingHashSet<>();
             } else {

@@ -16,11 +16,14 @@
 
 package org.carbon.grid.cache;
 
+import com.google.common.hash.Funnel;
+import com.google.common.hash.Hashing;
 import io.netty.buffer.ByteBuf;
 import org.cliffc.high_scale_lib.NonBlockingHashSet;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.io.IOException;
+import java.util.Objects;
 import java.util.Set;
 
 abstract class Message implements Persistable {
@@ -83,6 +86,33 @@ abstract class Message implements Persistable {
         return "message type: " + type + " messageSequenceNumber: " + messageSequenceNumber + " sender: " + sender + " lineId: " + lineId;
     }
 
+    @Override
+    public boolean equals(Object obj) {
+        if (Message.class.isInstance(obj)) {
+            Message that = (Message)obj;
+            return this.type.equals(that.type)
+                    && this.sender == that.sender
+                    && this.messageSequenceNumber == that.messageSequenceNumber
+                    && this.lineId == that.lineId;
+        } else {
+            return false;
+        }
+    }
+
+    @Override
+    public int hashCode() {
+        return Hashing.goodFastHash(32)
+                .hashObject(this, messageFunnel)
+                .asInt();
+    }
+
+    private static final Funnel<Message> messageFunnel = (Funnel<Message>) (msg, into) -> into
+            .putByte(msg.type.ordinal)
+            .putShort(msg.sender)
+            .putInt(msg.messageSequenceNumber)
+            .putLong(msg.lineId)
+            ;
+
     static abstract class Request extends Message {
         Request(MessageType type) {
             super(type);
@@ -110,6 +140,21 @@ abstract class Message implements Persistable {
         GET copy() {
             return new GET(sender, lineId);
         }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (GET.class.isInstance(obj)) {
+                GET that = (GET)obj;
+                return super.equals(that);
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return super.hashCode();
+        }
     }
 
     static class PUT extends Response {
@@ -132,9 +177,9 @@ abstract class Message implements Persistable {
         @Override
         public int calcMessagesByteSize() {
             return super.calcMessagesByteSize()
-                    + 4                 // version number int
-                    + 4                 // bytebuf size
-                    + data.capacity()   // buffer content
+                    + 4                                        // version number int
+                    + 4                                        // bytebuf size
+                    + ((data == null) ? 0 : data.capacity())   // buffer content
                     ;
         }
 
@@ -142,8 +187,12 @@ abstract class Message implements Persistable {
         public void write(MessageOutput out) throws IOException {
             super.write(out);
             out.writeInt(version);
-            out.writeInt(data.capacity());
-            out.writeByteBuf(data.resetReaderIndex());
+            if (data != null) {
+                out.writeInt(data.capacity());
+                out.writeByteBuf(data.resetReaderIndex());
+            } else {
+                out.writeInt(0);
+            }
         }
 
         @Override
@@ -151,8 +200,50 @@ abstract class Message implements Persistable {
             super.read(in);
             version = in.readInt();
             int bytesToRead = in.readInt();
-            data = in.readByteBuf(bytesToRead);
+            data = (bytesToRead == 0) ? null : in.readByteBuf(bytesToRead);
         }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (PUT.class.isInstance(obj)) {
+                PUT that = (PUT)obj;
+                return super.equals(that)
+                        && this.version == that.version
+                        && equalsByteBuf(this.data, that.data);
+            } else {
+                return false;
+            }
+        }
+
+        // the same as
+        // if (dis == null && dat == null) return true;
+        // else if (dis != null && dat != null) return ByteBufUtil.equals(dis, dat);
+        // else return false;
+        private boolean equalsByteBuf(ByteBuf dis, ByteBuf dat) {
+            return dis == null && dat == null
+                    || dis != null && dat != null && dis.capacity() == dat.capacity();
+                                               // && ByteBufUtil.equals(dis, dat);
+                                               // I somewhat wanted to use this but
+                                               // equals also depends on the underlying implementation
+                                               // of the ByteBuf instance
+                                               // for now ByteBufs are the same if they have the same size *sigh*
+        }
+
+        @Override
+        public int hashCode() {
+            return Hashing.goodFastHash(32)
+                    .hashObject(this, putFunnel)
+                    .asInt();
+        }
+
+        private static final Funnel<PUT> putFunnel = (Funnel<PUT>) (msg, into) -> into
+                .putByte(msg.type.ordinal)
+                .putShort(msg.sender)
+                .putInt(msg.messageSequenceNumber)
+                .putLong(msg.lineId)
+                .putInt(msg.version)
+                .putInt((msg.data == null) ? 0 : msg.data.capacity())
+                ;
     }
 
     static class ACK extends Response {
@@ -165,6 +256,21 @@ abstract class Message implements Persistable {
             this.messageSequenceNumber = requestMessageSequenceNumber;
             this.sender = sender;
             this.lineId = lineId;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (ACK.class.isInstance(obj)) {
+                ACK that = (ACK)obj;
+                return super.equals(that);
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return super.hashCode();
         }
     }
 
@@ -182,6 +288,21 @@ abstract class Message implements Persistable {
         @Override
         GETX copy() {
             return new GETX(sender, lineId);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (GETX.class.isInstance(obj)) {
+                GETX that = (GETX)obj;
+                return super.equals(that);
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return super.hashCode();
         }
     }
 
@@ -207,11 +328,11 @@ abstract class Message implements Persistable {
         @Override
         public int calcMessagesByteSize() {
             return super.calcMessagesByteSize()
-                    + 4                    // version number int
-                    + 2                    // num sharers short
-                    + (2 * sharers.size()) // all sharers short
-                    + 4                    // bytebuf size
-                    + data.capacity()      // buffer content
+                    + 4                                          // version number int
+                    + 2                                          // num sharers short
+                    + ((sharers == null) ? 0 :(2 * sharers.size())) // all sharers short
+                    + 4                                          // bytebuf size
+                    + ((data == null) ? 0 : data.capacity())     // buffer content
                     ;
         }
 
@@ -219,12 +340,20 @@ abstract class Message implements Persistable {
         public void write(MessageOutput out) throws IOException {
             super.write(out);
             out.writeInt(version);
-            out.writeShort(sharers.size());
-            for (Short s : sharers) {
-                out.writeShort(s);
+            if (sharers == null) {
+                out.writeShort(0);
+            } else {
+                out.writeShort(sharers.size());
+                for (Short s : sharers) {
+                    out.writeShort(s);
+                }
             }
-            out.writeInt(data.capacity());
-            out.writeByteBuf(data.resetReaderIndex());
+            if (data == null) {
+                out.writeInt(0);
+            } else {
+                out.writeInt(data.capacity());
+                out.writeByteBuf(data.resetReaderIndex());
+            }
         }
 
         @Override
@@ -232,13 +361,61 @@ abstract class Message implements Persistable {
             super.read(in);
             version = in.readInt();
             short numSharers = in.readShort();
-            sharers = new NonBlockingHashSet<>();
-            for (int i = 0; i < numSharers; i++) {
-                sharers.add(in.readShort());
+            if (numSharers == 0) {
+                sharers = null;
+            } else {
+                sharers = new NonBlockingHashSet<>();
+                for (int i = 0; i < numSharers; i++) {
+                    sharers.add(in.readShort());
+                }
             }
             int bytesToRead = in.readInt();
-            data = in.readByteBuf(bytesToRead);
+            data = (bytesToRead == 0) ? null : in.readByteBuf(bytesToRead);
         }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (PUTX.class.isInstance(obj)) {
+                PUTX that = (PUTX)obj;
+                return super.equals(that)
+                        && this.version == that.version
+                        && Objects.equals(this.sharers, that.sharers)
+                        && equalsByteBuf(this.data, that.data);
+            } else {
+                return false;
+            }
+        }
+
+        // the same as
+        // if (dis == null && dat == null) return true;
+        // else if (dis != null && dat != null) return ByteBufUtil.equals(dis, dat);
+        // else return false;
+        private boolean equalsByteBuf(ByteBuf dis, ByteBuf dat) {
+            return dis == null && dat == null
+                    || dis != null && dat != null && dis.capacity() == dat.capacity();
+                                                    // && ByteBufUtil.equals(dis, dat);
+                                                    // I somewhat wanted to use this but
+                                                    // equals also depends on the underlying implementation
+                                                    // of the ByteBuf instance
+                                                    // for now ByteBufs are the same if they have the same size *sigh*
+        }
+
+        @Override
+        public int hashCode() {
+            return Hashing.goodFastHash(32)
+                    .hashObject(this, putxFunnel)
+                    .asInt();
+        }
+
+        private static final Funnel<PUTX> putxFunnel = (Funnel<PUTX>) (msg, into) -> into
+                .putByte(msg.type.ordinal)
+                .putShort(msg.sender)
+                .putInt(msg.messageSequenceNumber)
+                .putLong(msg.lineId)
+                .putInt(msg.version)
+                .putInt((msg.sharers == null) ? 0 : msg.sharers.hashCode())
+                .putInt((msg.data == null) ? 0 : msg.data.capacity())
+                ;
     }
 
     static class OWNER_CHANGED extends Response {
@@ -281,11 +458,60 @@ abstract class Message implements Persistable {
             newOwner = in.readShort();
             originalMsgType = MessageType.fromByte(in.readByte());
         }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (OWNER_CHANGED.class.isInstance(obj)) {
+                OWNER_CHANGED that = (OWNER_CHANGED)obj;
+                return super.equals(that)
+                        && this.newOwner == that.newOwner
+                        && this.originalMsgType.ordinal == that.originalMsgType.ordinal;
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return Hashing.goodFastHash(32)
+                    .hashObject(this, ownerChangedFunnel)
+                    .asInt();
+        }
+
+        private static final Funnel<OWNER_CHANGED> ownerChangedFunnel = (Funnel<OWNER_CHANGED>) (msg, into) -> into
+                .putByte(msg.type.ordinal)
+                .putShort(msg.sender)
+                .putInt(msg.messageSequenceNumber)
+                .putLong(msg.lineId)
+                .putShort(msg.newOwner)
+                .putByte(msg.originalMsgType.ordinal)
+                ;
     }
 
     static class INV extends Request {
         private INV() {
             super(MessageType.INV);
+        }
+
+        INV(short sender, long lineId) {
+            super(MessageType.INV);
+            this.sender = sender;
+            this.lineId = lineId;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (INV.class.isInstance(obj)) {
+                INV that = (INV)obj;
+                return super.equals(that);
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return super.hashCode();
         }
     }
 
@@ -299,6 +525,21 @@ abstract class Message implements Persistable {
             this.messageSequenceNumber = requestMessageId;
             this.sender = sender;
             this.lineId = lineId;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (INVACK.class.isInstance(obj)) {
+                INVACK that = (INVACK)obj;
+                return super.equals(that);
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return super.hashCode();
         }
     }
 
