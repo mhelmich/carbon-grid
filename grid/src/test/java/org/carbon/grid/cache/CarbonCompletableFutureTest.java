@@ -18,6 +18,9 @@ package org.carbon.grid.cache;
 
 import org.junit.Test;
 
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -34,10 +37,10 @@ public class CarbonCompletableFutureTest {
     @Test
     public void testBasic() {
         CarbonCompletableFuture f = new CarbonCompletableFuture();
-        assertFalse(f.complete(null));
-        assertTrue(f.isDone());
+        assertFalse(f.isDone());
 
         f = new CarbonCompletableFuture();
+        assertTrue(f.complete(null));
         assertTrue(f.isDone());
 
         f = new CarbonCompletableFuture();
@@ -102,24 +105,21 @@ public class CarbonCompletableFutureTest {
     @Test
     public void testNestedCompletableFutures() {
         CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
-        assertTrue(farAwayFuture.isDone());
+        assertFalse(farAwayFuture.isDone());
 
         CarbonCompletableFuture f1 = new CarbonCompletableFuture();
         CarbonCompletableFuture f2 = new CarbonCompletableFuture();
         CarbonCompletableFuture f3 = new CarbonCompletableFuture();
         CarbonCompletableFuture f4 = new CarbonCompletableFuture();
+        Set<CompletableFuture<Void>> futures = new HashSet<CompletableFuture<Void>>() {{
+            add(f1);
+            add(f2);
+            add(f3);
+            add(f4);
+        }};
 
-        farAwayFuture = new CarbonCompletableFuture();
-        farAwayFuture.addFuture(f1);
-        farAwayFuture.addFuture(f2);
-        farAwayFuture.addFuture(f3);
-        farAwayFuture.addFuture(f4);
+        farAwayFuture = new CarbonCompletableFuture(futures);
         assertFalse(farAwayFuture.isDone());
-        assertFalse(farAwayFuture.complete(null));
-        assertFalse(farAwayFuture.complete(null));
-        assertFalse(farAwayFuture.complete(null));
-        assertFalse(farAwayFuture.complete(null));
-        assertFalse(farAwayFuture.complete(null));
         assertFalse(farAwayFuture.isDone());
 
         f2.complete(null);
@@ -136,18 +136,19 @@ public class CarbonCompletableFutureTest {
     @Test
     public void testExceptionWithNestedCompletableFutures() {
         CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
-        assertTrue(farAwayFuture.isDone());
+        assertFalse(farAwayFuture.isDone());
 
         CarbonCompletableFuture f1 = new CarbonCompletableFuture();
         CarbonCompletableFuture f2 = new CarbonCompletableFuture();
         CarbonCompletableFuture f3 = new CarbonCompletableFuture();
         CarbonCompletableFuture f4 = new CarbonCompletableFuture();
-
-        farAwayFuture = new CarbonCompletableFuture();
-        farAwayFuture.addFuture(f1);
-        farAwayFuture.addFuture(f2);
-        farAwayFuture.addFuture(f3);
-        farAwayFuture.addFuture(f4);
+        Set<CompletableFuture<Void>> futures = new HashSet<CompletableFuture<Void>>() {{
+            add(f1);
+            add(f2);
+            add(f3);
+            add(f4);
+        }};
+        farAwayFuture = new CarbonCompletableFuture(futures);
 
         f3.complete(null);
         f1.complete(null);
@@ -162,13 +163,13 @@ public class CarbonCompletableFutureTest {
 
     @Test
     public void testNestFutureConcurrently() throws InterruptedException {
-        CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
-
         CarbonCompletableFuture f1 = new CarbonCompletableFuture();
         CarbonCompletableFuture f2 = new CarbonCompletableFuture();
-
-        farAwayFuture.addFuture(f1);
-        farAwayFuture.addFuture(f2);
+        Set<CompletableFuture<Void>> futures = new HashSet<CompletableFuture<Void>>() {{
+            add(f1);
+            add(f2);
+        }};
+        CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture(futures);
 
         CountDownLatch threadFinished = new CountDownLatch(1);
         ExecutorService es = Executors.newFixedThreadPool(1);
@@ -195,15 +196,15 @@ public class CarbonCompletableFutureTest {
 
     @Test
     public void testNestFutureConcurrentlyFailure() throws InterruptedException {
-        CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
-
         CarbonCompletableFuture f1 = new CarbonCompletableFuture();
         CarbonCompletableFuture f2 = new CarbonCompletableFuture();
         CarbonCompletableFuture f3 = new CarbonCompletableFuture();
-
-        farAwayFuture.addFuture(f1);
-        farAwayFuture.addFuture(f2);
-        farAwayFuture.addFuture(f3);
+        Set<CompletableFuture<Void>> futures = new HashSet<CompletableFuture<Void>>() {{
+            add(f1);
+            add(f2);
+            add(f3);
+        }};
+        CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture(futures);
 
         CountDownLatch threadRecordedException = new CountDownLatch(1);
         CountDownLatch threadFinished = new CountDownLatch(1);
@@ -231,5 +232,20 @@ public class CarbonCompletableFutureTest {
         } finally {
             es.shutdown();
         }
+    }
+
+    @Test
+    public void testSelectiveMessageFuture() {
+        CarbonCompletableFuture f = new CarbonCompletableFuture(
+                MessageType.GET, MessageType.PUT, MessageType.INVACK
+        );
+
+        assertFalse(f.isDone());
+        assertFalse(f.complete(null, MessageType.INVACK));
+        assertFalse(f.isDone());
+        assertFalse(f.complete(null, MessageType.GET));
+        assertFalse(f.isDone());
+        assertTrue(f.complete(null, MessageType.PUT));
+        assertTrue(f.isDone());
     }
 }

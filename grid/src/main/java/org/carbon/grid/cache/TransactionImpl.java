@@ -79,7 +79,7 @@ class TransactionImpl implements Transaction, Closeable {
                 try {
                     undoInfo.buffer.release();
                 } catch (Exception xcp) {
-                    logger.error("", xcp);
+                    logger.error("Can't release buffer", xcp);
                 }
             }
         } finally {
@@ -90,10 +90,12 @@ class TransactionImpl implements Transaction, Closeable {
     private void releaseAllLines() {
         for (long lineId : lockedLines) {
             CacheLine line = cache.innerGetLineLocally(lineId);
-            try {
-                line.unlock();
-            } catch (Exception xcp) {
-                logger.error("", xcp);
+            if (line != null) {
+                try {
+                    line.unlock();
+                } catch (Exception xcp) {
+                    logger.error("While releasing buffers in a txn line with id " + lineId + " disappeared", xcp);
+                }
             }
         }
     }

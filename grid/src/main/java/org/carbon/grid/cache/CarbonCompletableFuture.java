@@ -19,7 +19,6 @@ package org.carbon.grid.cache;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
 import java.util.Collection;
-import java.util.LinkedList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -38,22 +37,23 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 class CarbonCompletableFuture extends CompletableFuture<Void> {
     private final boolean shouldWaitForAll;
-    private final Collection<CarbonCompletableFuture> futuresSoFar;
     private final AtomicReference<CompletableFuture<Void>> farAwayFuture;
     private final NonBlockingHashMap<MessageType, AtomicInteger> typeToCount;
 
-    CarbonCompletableFuture(Collection<CarbonCompletableFuture> futures) {
+    CarbonCompletableFuture(Collection<CompletableFuture<Void>> futures) {
         this.shouldWaitForAll = true;
         this.typeToCount = null;
-        this.futuresSoFar = futures;
-        this.farAwayFuture = new AtomicReference<>(CompletableFuture.allOf(futuresSoFar.toArray(new CompletableFuture<?>[0])));
+        // take all of the futures passed into me and unionize them into one
+        // the one that farAwayFuture points to
+        this.farAwayFuture = new AtomicReference<>(CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[0])));
     }
 
     CarbonCompletableFuture() {
         this.shouldWaitForAll = true;
         this.typeToCount = null;
-        this.futuresSoFar = new LinkedList<>();
-        this.farAwayFuture = new AtomicReference<>(null);
+        // this time no future is being passed in ... except I'm one myself
+        // make it so that farAwayFuture points to me
+        this.farAwayFuture = new AtomicReference<>(CompletableFuture.allOf(this));
     }
 
     CarbonCompletableFuture(MessageType... messagesToWaitFor) {
@@ -63,14 +63,12 @@ class CarbonCompletableFuture extends CompletableFuture<Void> {
             this.typeToCount.putIfAbsent(type, new AtomicInteger(0));
             this.typeToCount.get(type).incrementAndGet();
         }
-        this.futuresSoFar = null;
         this.farAwayFuture = null;
     }
 
     @Override
     public boolean cancel(boolean mayInterruptIfRunning) {
         if (shouldWaitForAll) {
-            bakeFarAwayFuture();
             return farAwayFuture.get().cancel(mayInterruptIfRunning);
         } else {
             return super.cancel(mayInterruptIfRunning);
@@ -80,7 +78,6 @@ class CarbonCompletableFuture extends CompletableFuture<Void> {
     @Override
     public boolean isCancelled() {
         if (shouldWaitForAll) {
-            bakeFarAwayFuture();
             return farAwayFuture.get().isCancelled();
         } else {
             return super.isCancelled();
@@ -90,7 +87,6 @@ class CarbonCompletableFuture extends CompletableFuture<Void> {
     @Override
     public boolean isDone() {
         if (shouldWaitForAll) {
-            bakeFarAwayFuture();
             return farAwayFuture.get().isDone();
         } else {
             return super.isDone();
@@ -100,7 +96,6 @@ class CarbonCompletableFuture extends CompletableFuture<Void> {
     @Override
     public Void get() throws InterruptedException, ExecutionException {
         if (shouldWaitForAll) {
-            bakeFarAwayFuture();
             return farAwayFuture.get().get();
         } else {
             return super.get();
@@ -110,7 +105,6 @@ class CarbonCompletableFuture extends CompletableFuture<Void> {
     @Override
     public Void get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
         if (shouldWaitForAll) {
-            bakeFarAwayFuture();
             return farAwayFuture.get().get(timeout, unit);
         } else {
             return super.get(timeout, unit);
@@ -119,12 +113,12 @@ class CarbonCompletableFuture extends CompletableFuture<Void> {
 
     @Override
     public boolean completeExceptionally(Throwable ex) {
-        return !shouldWaitForAll && super.completeExceptionally(ex);
+        return super.completeExceptionally(ex);
     }
 
     @Override
     public boolean complete(Void value) {
-        return !shouldWaitForAll && super.complete(value);
+        return super.complete(value);
     }
 
     boolean complete(Void value, MessageType type) {
@@ -140,15 +134,5 @@ class CarbonCompletableFuture extends CompletableFuture<Void> {
 
             return typeToCount.isEmpty() && super.complete(value);
         }
-    }
-
-    void addFuture(CarbonCompletableFuture f) {
-        assert shouldWaitForAll;
-        assert farAwayFuture.get() == null;
-        futuresSoFar.add(f);
-    }
-
-    private void bakeFarAwayFuture() {
-        farAwayFuture.compareAndSet(null, CompletableFuture.allOf(futuresSoFar.toArray(new CompletableFuture<?>[0])));
     }
 }

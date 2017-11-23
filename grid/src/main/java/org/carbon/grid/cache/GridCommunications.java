@@ -34,6 +34,7 @@ import java.net.InetSocketAddress;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -108,18 +109,11 @@ class GridCommunications implements Closeable {
     // a broadcast today is just pinging every node
     // in the cluster in a loop
     Future<Void> broadcast(Message msg) throws IOException {
-//        return broadcast(msg, null);
-//        List<CarbonCompletableFuture> futures = new LinkedList<>();
-//        for (Short nodeId : nodeIdToClient.keySet()) {
-//            futures.add(innerSend(nodeId, msg.copy(), new CarbonCompletableFuture()));
-//        }
-//        return new CarbonCompletableFuture(futures);
-
-        List<Future<Void>> futures = new LinkedList<>();
+        List<CompletableFuture<Void>> futures = new LinkedList<>();
         for (Short nodeId : nodeIdToClient.keySet()) {
-            futures.add(send(nodeId, msg.copy()));
+            futures.add(innerSend(nodeId, msg.copy(), new CarbonCompletableFuture()));
         }
-        return new CompositeFuture(futures);
+        return new CarbonCompletableFuture(futures);
     }
 
     Future<Void> broadcast(Message msg, MessageType... waitForAnswersFrom) throws IOException {
@@ -134,7 +128,7 @@ class GridCommunications implements Closeable {
         return f;
     }
 
-    private Future<Void> innerSend(short toNode, Message msg, CarbonCompletableFuture futureToUse) throws IOException {
+    private CarbonCompletableFuture innerSend(short toNode, Message msg, CarbonCompletableFuture futureToUse) throws IOException {
         TcpGridClient client = nodeIdToClient.get(toNode);
         if (client == null) throw new RuntimeException("couldn't find client for node " + toNode + " and can't answer message " + msg.getMessageSequenceNumber());
 
