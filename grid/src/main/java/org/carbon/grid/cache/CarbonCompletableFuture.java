@@ -38,9 +38,16 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 class CarbonCompletableFuture extends CompletableFuture<Void> {
     private final boolean shouldWaitForAll;
-    private final Collection<CompletableFuture<Void>> futuresSoFar;
+    private final Collection<CarbonCompletableFuture> futuresSoFar;
     private final AtomicReference<CompletableFuture<Void>> farAwayFuture;
     private final NonBlockingHashMap<MessageType, AtomicInteger> typeToCount;
+
+    CarbonCompletableFuture(Collection<CarbonCompletableFuture> futures) {
+        this.shouldWaitForAll = true;
+        this.typeToCount = null;
+        this.futuresSoFar = futures;
+        this.farAwayFuture = new AtomicReference<>(CompletableFuture.allOf(futuresSoFar.toArray(new CompletableFuture<?>[0])));
+    }
 
     CarbonCompletableFuture() {
         this.shouldWaitForAll = true;
@@ -135,9 +142,7 @@ class CarbonCompletableFuture extends CompletableFuture<Void> {
         }
     }
 
-
-    //
-    void addFuture(CompletableFuture<Void> f) {
+    void addFuture(CarbonCompletableFuture f) {
         assert shouldWaitForAll;
         assert farAwayFuture.get() == null;
         futuresSoFar.add(f);

@@ -18,7 +18,6 @@ package org.carbon.grid.cache;
 
 import org.junit.Test;
 
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -105,10 +104,10 @@ public class CarbonCompletableFutureTest {
         CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
         assertTrue(farAwayFuture.isDone());
 
-        CompletableFuture<Void> f1 = new CompletableFuture<>();
-        CompletableFuture<Void> f2 = new CompletableFuture<>();
-        CompletableFuture<Void> f3 = new CompletableFuture<>();
-        CompletableFuture<Void> f4 = new CompletableFuture<>();
+        CarbonCompletableFuture f1 = new CarbonCompletableFuture();
+        CarbonCompletableFuture f2 = new CarbonCompletableFuture();
+        CarbonCompletableFuture f3 = new CarbonCompletableFuture();
+        CarbonCompletableFuture f4 = new CarbonCompletableFuture();
 
         farAwayFuture = new CarbonCompletableFuture();
         farAwayFuture.addFuture(f1);
@@ -139,10 +138,10 @@ public class CarbonCompletableFutureTest {
         CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
         assertTrue(farAwayFuture.isDone());
 
-        CompletableFuture<Void> f1 = new CompletableFuture<>();
-        CompletableFuture<Void> f2 = new CompletableFuture<>();
-        CompletableFuture<Void> f3 = new CompletableFuture<>();
-        CompletableFuture<Void> f4 = new CompletableFuture<>();
+        CarbonCompletableFuture f1 = new CarbonCompletableFuture();
+        CarbonCompletableFuture f2 = new CarbonCompletableFuture();
+        CarbonCompletableFuture f3 = new CarbonCompletableFuture();
+        CarbonCompletableFuture f4 = new CarbonCompletableFuture();
 
         farAwayFuture = new CarbonCompletableFuture();
         farAwayFuture.addFuture(f1);
@@ -165,8 +164,8 @@ public class CarbonCompletableFutureTest {
     public void testNestFutureConcurrently() throws InterruptedException {
         CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
 
-        CompletableFuture<Void> f1 = new CompletableFuture<>();
-        CompletableFuture<Void> f2 = new CompletableFuture<>();
+        CarbonCompletableFuture f1 = new CarbonCompletableFuture();
+        CarbonCompletableFuture f2 = new CarbonCompletableFuture();
 
         farAwayFuture.addFuture(f1);
         farAwayFuture.addFuture(f2);
@@ -198,9 +197,9 @@ public class CarbonCompletableFutureTest {
     public void testNestFutureConcurrentlyFailure() throws InterruptedException {
         CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
 
-        CompletableFuture<Void> f1 = new CompletableFuture<>();
-        CompletableFuture<Void> f2 = new CompletableFuture<>();
-        CompletableFuture<Void> f3 = new CompletableFuture<>();
+        CarbonCompletableFuture f1 = new CarbonCompletableFuture();
+        CarbonCompletableFuture f2 = new CarbonCompletableFuture();
+        CarbonCompletableFuture f3 = new CarbonCompletableFuture();
 
         farAwayFuture.addFuture(f1);
         farAwayFuture.addFuture(f2);
