@@ -109,6 +109,12 @@ class GridCommunications implements Closeable {
     // in the cluster in a loop
     Future<Void> broadcast(Message msg) throws IOException {
 //        return broadcast(msg, null);
+//        List<CarbonCompletableFuture> futures = new LinkedList<>();
+//        for (Short nodeId : nodeIdToClient.keySet()) {
+//            futures.add(innerSend(nodeId, msg.copy(), new CarbonCompletableFuture()));
+//        }
+//        return new CarbonCompletableFuture(futures);
+
         List<Future<Void>> futures = new LinkedList<>();
         for (Short nodeId : nodeIdToClient.keySet()) {
             futures.add(send(nodeId, msg.copy()));
