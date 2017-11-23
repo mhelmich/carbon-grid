@@ -164,7 +164,7 @@ public class GridCommunicationsTest {
             Message.GET get = new Message.GET(sender, lineId);
             get.messageSequenceNumber = messageRequestId;
 
-            CarbonCompletableFuture<Void> latch = new CarbonCompletableFuture<>();
+            CarbonCompletableFuture latch = new CarbonCompletableFuture();
             msgIdToLatch.put(comm.hashNodeIdMessageSeq(comm.myNodeId, oc1.getMessageSequenceNumber()), new GridCommunications.LatchAndMessage(latch, get));
             comm.reactToResponse(oc1, oc1.newOwner, requestToSend);
             assertNotNull(msgIdToLatch.get(comm.hashNodeIdMessageSeq(oc1.newOwner, requestToSend.getMessageSequenceNumber())));

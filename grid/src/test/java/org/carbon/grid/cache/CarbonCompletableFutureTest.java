@@ -16,5 +16,221 @@
 
 package org.carbon.grid.cache;
 
+import org.junit.Test;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 public class CarbonCompletableFutureTest {
+    private final static int TIMEOUT = 555;
+    @Test
+    public void testBasic() {
+        CarbonCompletableFuture f = new CarbonCompletableFuture();
+        assertFalse(f.complete(null));
+        assertTrue(f.isDone());
+
+        f = new CarbonCompletableFuture();
+        assertTrue(f.isDone());
+
+        f = new CarbonCompletableFuture();
+        assertTrue(f.complete(null, null));
+        assertTrue(f.isDone());
+
+        f = new CarbonCompletableFuture();
+        assertTrue(f.complete(null, MessageType.GET));
+        assertTrue(f.isDone());
+
+        f = new CarbonCompletableFuture(MessageType.GET);
+        assertTrue(f.complete(null, MessageType.GET));
+        assertTrue(f.isDone());
+
+        f = new CarbonCompletableFuture(MessageType.GET, MessageType.GET);
+        assertFalse(f.complete(null, MessageType.GET));
+        assertFalse(f.isDone());
+        assertTrue(f.complete(null, MessageType.GET));
+        assertTrue(f.isDone());
+
+        f = new CarbonCompletableFuture(MessageType.GET);
+        assertFalse(f.complete(null, MessageType.PUT));
+        assertFalse(f.isDone());
+        assertTrue(f.complete(null, MessageType.GET));
+        assertTrue(f.isDone());
+
+        f = new CarbonCompletableFuture(MessageType.GET, MessageType.PUT);
+        assertFalse(f.complete(null, MessageType.GET));
+        assertFalse(f.isDone());
+        assertTrue(f.complete(null, MessageType.PUT));
+        assertTrue(f.isDone());
+
+        f = new CarbonCompletableFuture(MessageType.GET, MessageType.PUT);
+        assertFalse(f.complete(null, MessageType.ACK));
+        assertFalse(f.isDone());
+        assertFalse(f.complete(null, MessageType.ACK));
+        assertFalse(f.isDone());
+        assertFalse(f.complete(null, MessageType.ACK));
+        assertFalse(f.isDone());
+        assertFalse(f.complete(null, MessageType.ACK));
+        assertFalse(f.isDone());
+        assertFalse(f.complete(null, MessageType.PUT));
+        assertFalse(f.isDone());
+        assertTrue(f.complete(null, MessageType.GET));
+        assertTrue(f.isDone());
+
+        f = new CarbonCompletableFuture(MessageType.GET, MessageType.PUT);
+        assertFalse(f.complete(null, MessageType.ACK));
+        assertFalse(f.isDone());
+        assertFalse(f.complete(null, MessageType.ACK));
+        assertFalse(f.isDone());
+        assertFalse(f.complete(null, MessageType.ACK));
+        assertFalse(f.isDone());
+        assertFalse(f.complete(null, MessageType.PUT));
+        assertFalse(f.isDone());
+        assertFalse(f.complete(null, MessageType.ACK));
+        assertFalse(f.isDone());
+        assertTrue(f.complete(null, MessageType.GET));
+        assertTrue(f.isDone());
+    }
+
+    @Test
+    public void testNestedCompletableFutures() {
+        CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
+        assertTrue(farAwayFuture.isDone());
+
+        CompletableFuture<Void> f1 = new CompletableFuture<>();
+        CompletableFuture<Void> f2 = new CompletableFuture<>();
+        CompletableFuture<Void> f3 = new CompletableFuture<>();
+        CompletableFuture<Void> f4 = new CompletableFuture<>();
+
+        farAwayFuture = new CarbonCompletableFuture();
+        farAwayFuture.addFuture(f1);
+        farAwayFuture.addFuture(f2);
+        farAwayFuture.addFuture(f3);
+        farAwayFuture.addFuture(f4);
+        assertFalse(farAwayFuture.isDone());
+        assertFalse(farAwayFuture.complete(null));
+        assertFalse(farAwayFuture.complete(null));
+        assertFalse(farAwayFuture.complete(null));
+        assertFalse(farAwayFuture.complete(null));
+        assertFalse(farAwayFuture.complete(null));
+        assertFalse(farAwayFuture.isDone());
+
+        f2.complete(null);
+        assertFalse(farAwayFuture.isDone());
+
+        f3.complete(null);
+        f1.complete(null);
+        assertFalse(farAwayFuture.isDone());
+
+        f4.complete(null);
+        assertTrue(farAwayFuture.isDone());
+    }
+
+    @Test
+    public void testExceptionWithNestedCompletableFutures() {
+        CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
+        assertTrue(farAwayFuture.isDone());
+
+        CompletableFuture<Void> f1 = new CompletableFuture<>();
+        CompletableFuture<Void> f2 = new CompletableFuture<>();
+        CompletableFuture<Void> f3 = new CompletableFuture<>();
+        CompletableFuture<Void> f4 = new CompletableFuture<>();
+
+        farAwayFuture = new CarbonCompletableFuture();
+        farAwayFuture.addFuture(f1);
+        farAwayFuture.addFuture(f2);
+        farAwayFuture.addFuture(f3);
+        farAwayFuture.addFuture(f4);
+
+        f3.complete(null);
+        f1.complete(null);
+        assertFalse(farAwayFuture.isDone());
+
+        f4.completeExceptionally(new Exception("BOOOOM -- planted on purpose"));
+        assertFalse(farAwayFuture.isDone());
+
+        f2.complete(null);
+        assertTrue(farAwayFuture.isDone());
+    }
+
+    @Test
+    public void testNestFutureConcurrently() throws InterruptedException {
+        CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
+
+        CompletableFuture<Void> f1 = new CompletableFuture<>();
+        CompletableFuture<Void> f2 = new CompletableFuture<>();
+
+        farAwayFuture.addFuture(f1);
+        farAwayFuture.addFuture(f2);
+
+        CountDownLatch threadFinished = new CountDownLatch(1);
+        ExecutorService es = Executors.newFixedThreadPool(1);
+        try {
+            es.submit(() -> {
+                try {
+                    farAwayFuture.get();
+                } catch (InterruptedException | ExecutionException e) {
+                    // I hope this never happens
+                    fail();
+                }
+                threadFinished.countDown();
+            });
+
+            f1.complete(null);
+            assertEquals(1, threadFinished.getCount());
+
+            f2.complete(null);
+            assertTrue(threadFinished.await(TIMEOUT, TimeUnit.SECONDS));
+        } finally {
+            es.shutdown();
+        }
+    }
+
+    @Test
+    public void testNestFutureConcurrentlyFailure() throws InterruptedException {
+        CarbonCompletableFuture farAwayFuture = new CarbonCompletableFuture();
+
+        CompletableFuture<Void> f1 = new CompletableFuture<>();
+        CompletableFuture<Void> f2 = new CompletableFuture<>();
+        CompletableFuture<Void> f3 = new CompletableFuture<>();
+
+        farAwayFuture.addFuture(f1);
+        farAwayFuture.addFuture(f2);
+        farAwayFuture.addFuture(f3);
+
+        CountDownLatch threadRecordedException = new CountDownLatch(1);
+        CountDownLatch threadFinished = new CountDownLatch(1);
+        ExecutorService es = Executors.newFixedThreadPool(1);
+        try {
+            es.submit(() -> {
+                try {
+                    farAwayFuture.get();
+                } catch (Exception xcp) {
+                    threadRecordedException.countDown();
+                }
+                threadFinished.countDown();
+            });
+
+            f1.complete(null);
+            assertEquals(1, threadRecordedException.getCount());
+
+            f2.completeExceptionally(new Exception("BOOOM -- planted for you on purpose"));
+            assertEquals(1, threadRecordedException.getCount());
+            assertEquals(1, threadFinished.getCount());
+
+            f3.complete(null);
+            assertTrue(threadRecordedException.await(TIMEOUT, TimeUnit.SECONDS));
+            assertTrue(threadFinished.await(TIMEOUT, TimeUnit.SECONDS));
+        } finally {
+            es.shutdown();
+        }
+    }
 }

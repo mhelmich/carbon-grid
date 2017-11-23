@@ -102,7 +102,7 @@ class GridCommunications implements Closeable {
     }
 
     Future<Void> send(short toNode, Message msg) throws IOException {
-        return innerSend(toNode, msg, new CarbonCompletableFuture<>());
+        return innerSend(toNode, msg, new CarbonCompletableFuture());
     }
 
     // a broadcast today is just pinging every node
@@ -117,18 +117,18 @@ class GridCommunications implements Closeable {
     }
 
     Future<Void> broadcast(Message msg, MessageType... waitForAnswersFrom) throws IOException {
-        CarbonCompletableFuture<Void> f = new CarbonCompletableFuture<>(waitForAnswersFrom);
+        CarbonCompletableFuture f = new CarbonCompletableFuture(waitForAnswersFrom);
         for (Short toNode : nodeIdToClient.keySet()) {
             // TODO -- the semantics are not the same
             // the old code waits for *all* messages to come back
-            // the new code (as it is now) waits for *one* message come back
+            // the new code (as it is now) waits for *one* message to come back
             // the future needs to be more complicated
             innerSend(toNode, msg.copy(), f);
         }
         return f;
     }
 
-    private Future<Void> innerSend(short toNode, Message msg, CarbonCompletableFuture<Void> futureToUse) throws IOException {
+    private Future<Void> innerSend(short toNode, Message msg, CarbonCompletableFuture futureToUse) throws IOException {
         TcpGridClient client = nodeIdToClient.get(toNode);
         if (client == null) throw new RuntimeException("couldn't find client for node " + toNode + " and can't answer message " + msg.getMessageSequenceNumber());
 
@@ -368,9 +368,9 @@ class GridCommunications implements Closeable {
     }
 
     static class LatchAndMessage {
-        final CarbonCompletableFuture<Void> latch;
+        final CarbonCompletableFuture latch;
         final Message msg;
-        LatchAndMessage(CarbonCompletableFuture<Void> latch, Message msg) {
+        LatchAndMessage(CarbonCompletableFuture latch, Message msg) {
             this.latch = latch;
             this.msg = msg;
         }

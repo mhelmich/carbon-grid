@@ -464,7 +464,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     // this method will return null even if we know about the line
-    // but can't use it
+    // but can't use it (in other words: the line is in state I)
     private CacheLine getLineLocally(long lineId) {
         CacheLine line = innerGetLineLocally(lineId);
         if (line != null && CacheLineState.INVALID.equals(line.getState())) {
