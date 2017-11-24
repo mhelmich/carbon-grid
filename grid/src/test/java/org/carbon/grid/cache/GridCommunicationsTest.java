@@ -16,6 +16,8 @@
 
 package org.carbon.grid.cache;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.ChannelFuture;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
@@ -24,11 +26,14 @@ import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
@@ -42,6 +47,8 @@ import static org.mockito.Mockito.when;
 
 public class GridCommunicationsTest {
     private final static int TIMEOUT = 55;
+    private final Random random = new Random();
+
     @Test
     public void testBacklog() throws IOException, InterruptedException, NoSuchFieldException, IllegalAccessException {
         short sender = 444;
@@ -171,6 +178,67 @@ public class GridCommunicationsTest {
         }
     }
 
+    @Test
+    public void testBroadcastWaitingForSpecificMessages() throws IOException, InterruptedException, TimeoutException, ExecutionException {
+        short sender555 = 555;
+        short sender666 = 666;
+        short sender777 = 777;
+        int port555 = 8888;
+        int port666 = 9999;
+        int port777 = 7777;
+        long lineId = 1234567890;
+
+        CountDownLatch receivedPut = new CountDownLatch(1);
+        AtomicInteger responsesReceived = new AtomicInteger(0);
+        CountDownLatch blockAckHandler = new CountDownLatch(1);
+
+        InternalCache cacheMock555 = Mockito.mock(InternalCache.class);
+        doAnswer(inv -> {
+            Message.Response resp = inv.getArgumentAt(0, Message.Response.class);
+            responsesReceived.incrementAndGet();
+            if (MessageType.PUT.equals(resp.type)) {
+                receivedPut.countDown();
+            }
+            return null;
+        }).when(cacheMock555).handleResponse(any(Message.Response.class));
+
+        InternalCache cacheMock666 = Mockito.mock(InternalCache.class);
+        doAnswer(inv -> {
+            Message.Request req = inv.getArgumentAt(0, Message.Request.class);
+            assertTrue(blockAckHandler.await(TIMEOUT, TimeUnit.SECONDS));
+            return new Message.ACK(req.messageSequenceNumber, sender666, lineId);
+        }).when(cacheMock666).handleRequest(any(Message.Request.class));
+
+        ByteBuf buffer = newRandomBuffer();
+        InternalCache cacheMock777 = Mockito.mock(InternalCache.class);
+        doAnswer(inv -> {
+            Message.Request req = inv.getArgumentAt(0, Message.Request.class);
+            return new Message.PUT(req.messageSequenceNumber, sender777, lineId, 5, buffer);
+        }).when(cacheMock777).handleRequest(any(Message.Request.class));
+
+        try (GridCommunications comm555 = new GridCommunications(sender555, port555, cacheMock555)) {
+            try (GridCommunications comm666 = new GridCommunications(sender666, port666, cacheMock666)) {
+                try (GridCommunications comm777 = new GridCommunications(sender777, port777, cacheMock777)) {
+                    comm555.addPeer(sender666, "localhost", port666);
+                    comm555.addPeer(sender777, "localhost", port777);
+                    comm666.addPeer(sender555, "localhost", port555);
+                    comm666.addPeer(sender777, "localhost", port777);
+                    comm777.addPeer(sender555, "localhost", port555);
+                    comm777.addPeer(sender666, "localhost", port666);
+
+                    Message.GET get = new Message.GET(sender555, lineId);
+                    comm555.broadcast(get, MessageType.PUT).get(TIMEOUT, TimeUnit.SECONDS);
+
+                    assertTrue(receivedPut.await(TIMEOUT, TimeUnit.SECONDS));
+                    assertEquals(1, responsesReceived.get());
+                    blockAckHandler.countDown();
+                }
+            }
+        } finally {
+            buffer.release();
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> getBacklogMap(GridCommunications comms) throws NoSuchFieldException, IllegalAccessException {
         Field field = GridCommunications.class.getDeclaredField("cacheLineIdToBacklog");
@@ -190,5 +258,13 @@ public class GridCommunicationsTest {
         Field field = GridCommunications.class.getDeclaredField("nodeIdToClient");
         field.setAccessible(true);
         return (NonBlockingHashMap<Short, TcpGridClient>) field.get(comms);
+    }
+
+    private ByteBuf newRandomBuffer() {
+        byte[] bites = new byte[1024];
+        random.nextBytes(bites);
+        ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer(1024);
+        buffer.writeBytes(bites);
+        return buffer;
     }
 }
