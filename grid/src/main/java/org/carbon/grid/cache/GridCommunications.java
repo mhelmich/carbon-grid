@@ -119,10 +119,8 @@ class GridCommunications implements Closeable {
     Future<Void> broadcast(Message msg, MessageType... waitForAnswersFrom) throws IOException {
         CarbonCompletableFuture f = new CarbonCompletableFuture(waitForAnswersFrom);
         for (Short toNode : nodeIdToClient.keySet()) {
-            // TODO -- the semantics are not the same
-            // the old code waits for *all* messages to come back
-            // the new code (as it is now) waits for *one* message to come back
-            // the future needs to be more complicated
+            // the other code waits for *all* messages to come back
+            // this code (as it is now) waits for all messages in waitForAnswersFrom to come back
             innerSend(toNode, msg.copy(), f);
         }
         return f;
