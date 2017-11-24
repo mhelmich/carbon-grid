@@ -117,6 +117,20 @@ abstract class Message implements Persistable {
         Request(MessageType type) {
             super(type);
         }
+
+        // not nice but effective
+        // this method indicates to the cache what it should wait for in case of broadcasts
+        // the standard behavior (returning null) for broadcasts means:
+        // "wait for a message to come back from each node I asked before completing"
+        // needless to say this is little efficient when it comes to broadcasting GETs
+        // in those cases the node waits for ACKs from all nodes before completing ...
+        // ... even if the first message that was received is the PUT
+        // by returning MessageType.PUT a message can indicate that a broadcast should
+        // only wait for one PUT before completing
+        // this array can have multiple entries and also multiple entires of the same message type
+        MessageType[] messagesToWaitForUntilFutureCompletes() {
+            return null;
+        }
     }
 
     static abstract class Response extends Message {
@@ -154,6 +168,11 @@ abstract class Message implements Persistable {
         @Override
         public int hashCode() {
             return super.hashCode();
+        }
+
+        @Override
+        MessageType[] messagesToWaitForUntilFutureCompletes() {
+            return new MessageType[] { MessageType.PUT };
         }
     }
 
@@ -303,6 +322,11 @@ abstract class Message implements Persistable {
         @Override
         public int hashCode() {
             return super.hashCode();
+        }
+
+        @Override
+        MessageType[] messagesToWaitForUntilFutureCompletes() {
+            return new MessageType[] { MessageType.PUTX };
         }
     }
 

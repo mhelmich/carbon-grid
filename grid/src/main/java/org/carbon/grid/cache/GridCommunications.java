@@ -117,13 +117,18 @@ class GridCommunications implements Closeable {
     }
 
     Future<Void> broadcast(Message msg, MessageType... waitForAnswersFrom) throws IOException {
-        CarbonCompletableFuture f = new CarbonCompletableFuture(waitForAnswersFrom);
-        for (Short toNode : nodeIdToClient.keySet()) {
-            // the other code waits for *all* messages to come back
-            // this code (as it is now) waits for all messages in waitForAnswersFrom to come back
-            innerSend(toNode, msg.copy(), f);
+        if (nodeIdToClient.isEmpty()) {
+            // if there's no other nodes, there's nothing to do
+            return CompletableFuture.completedFuture(null);
+        } else {
+            CarbonCompletableFuture f = new CarbonCompletableFuture(waitForAnswersFrom);
+            for (Short toNode : nodeIdToClient.keySet()) {
+                // the other code waits for *all* messages to come back
+                // this code (as it is now) waits for all messages in waitForAnswersFrom to come back
+                innerSend(toNode, msg.copy(), f);
+            }
+            return f;
         }
-        return f;
     }
 
     private CarbonCompletableFuture innerSend(short toNode, Message msg, CarbonCompletableFuture futureToUse) throws IOException {

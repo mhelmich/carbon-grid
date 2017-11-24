@@ -29,6 +29,7 @@ import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -428,7 +429,7 @@ class InternalCacheImpl implements InternalCache, Closeable {
         return innerGenericGetLineRemotely(get);
     }
 
-    private CacheLine innerGenericGetLineRemotely(Message anyGetMessage) throws IOException {
+    private CacheLine innerGenericGetLineRemotely(Message.Request anyGetMessage) throws IOException {
         // it might be worth checking the shared map to see whether
         // we find a stub but the line is invalid
         long lineId = anyGetMessage.lineId;
@@ -454,10 +455,16 @@ class InternalCacheImpl implements InternalCache, Closeable {
         }
     }
 
-    private void innerBroadcast(Message msgToSend) throws IOException {
+    private void innerBroadcast(Message.Request msgToSend) throws IOException {
         try {
-            // TODO -- make it so that broadcasts only wait for the minimum number of relevant messages
-            comms.broadcast(msgToSend).get(TIMEOUT_SECS, TimeUnit.SECONDS);
+            final Future<Void> future;
+            MessageType[] msgToWaitFor = msgToSend.messagesToWaitForUntilFutureCompletes();
+            if (msgToWaitFor == null) {
+                future = comms.broadcast(msgToSend);
+            } else {
+                future = comms.broadcast(msgToSend, msgToWaitFor);
+            }
+            future.get(TIMEOUT_SECS, TimeUnit.SECONDS);
         } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
             throw new IOException(xcp);
         }
