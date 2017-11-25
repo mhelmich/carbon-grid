@@ -26,8 +26,11 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -243,15 +246,6 @@ class InternalCacheImpl implements InternalCache {
             owned.put(putx.lineId, oldLine);
             shared.remove(putx.lineId);
         }
-
-        CacheLine line = owned.get(putx.lineId);
-        for (short sharer : line.getSharers()) {
-            try {
-                comms.send(sharer, new Message.INV(myNodeId, putx.lineId));
-            } catch (IOException xcp) {
-                xcp.printStackTrace();
-            }
-        }
     }
 
     private void handlePUT(Message.PUT put) {
@@ -440,53 +434,70 @@ class InternalCacheImpl implements InternalCache {
 
     private CacheLine getxLineRemotely(long lineId) throws IOException {
         Message.GETX getx = new Message.GETX(myNodeId, lineId);
-        return innerGenericGetLineRemotely(getx);
+        Future<Void> getxFuture = innerGenericGetLineRemotely(getx);
+        try {
+            getxFuture.get(TIMEOUT_SECS, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
+            throw new IOException(xcp);
+        }
+
+        CacheLine line = owned.get(lineId);
+        List<CompletableFuture<Void>> invalidateFutures = new LinkedList<>();
+        for (short sharer : line.getSharers()) {
+            invalidateFutures.add(comms.send(sharer, new Message.INV(myNodeId, lineId)));
+        }
+
+        CarbonCompletableFuture invalidateFuture = new CarbonCompletableFuture(invalidateFutures);
+        try {
+            invalidateFuture.get(TIMEOUT_SECS, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
+            throw new IOException(xcp);
+        }
+
+        return getLineLocally(lineId);
     }
 
     private CacheLine getLineRemotely(long lineId) throws IOException {
         Message.GET get = new Message.GET(comms.myNodeId, lineId);
-        return innerGenericGetLineRemotely(get);
+        Future<Void> getFuture = innerGenericGetLineRemotely(get);
+        try {
+            getFuture.get(TIMEOUT_SECS, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
+            throw new IOException(xcp);
+        }
+        return getLineLocally(lineId);
     }
 
-    private CacheLine innerGenericGetLineRemotely(Message.Request anyGetMessage) throws IOException {
+    private Future<Void> innerGenericGetLineRemotely(Message.Request anyGetMessage) throws IOException {
         // it might be worth checking the shared map to see whether
         // we find a stub but the line is invalid
         long lineId = anyGetMessage.lineId;
         CacheLine line = getLineLocally(lineId);
         if (line != null) {
             // AHA!!
-            innerUnicast(line.getOwner(), anyGetMessage);
+            return innerUnicast(line.getOwner(), anyGetMessage);
         } else {
             // nope we don't know anything
             // we gotta find out where this thing is first
             line = new CacheLine(lineId, -1, (short)-1, CacheLineState.INVALID, null);
             shared.put(lineId, line);
-            innerBroadcast(anyGetMessage);
-        }
-        return getLineLocally(lineId);
-    }
-
-    private void innerUnicast(short nodeToSendTo, Message msgToSend) throws IOException {
-        try {
-            comms.send(nodeToSendTo, msgToSend).get(TIMEOUT_SECS, TimeUnit.SECONDS);
-        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
-            throw new IOException(xcp);
+            return innerBroadcast(anyGetMessage);
         }
     }
 
-    private void innerBroadcast(Message.Request msgToSend) throws IOException {
-        try {
-            final Future<Void> future;
-            MessageType[] msgToWaitFor = msgToSend.messagesToWaitForUntilFutureCompletes();
-            if (msgToWaitFor == null) {
-                future = comms.broadcast(msgToSend);
-            } else {
-                future = comms.broadcast(msgToSend, msgToWaitFor);
-            }
-            future.get(TIMEOUT_SECS, TimeUnit.SECONDS);
-        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
-            throw new IOException(xcp);
+    private Future<Void> innerUnicast(short nodeToSendTo, Message msgToSend) throws IOException {
+        return comms.send(nodeToSendTo, msgToSend);
+    }
+
+    private Future<Void> innerBroadcast(Message.Request msgToSend) throws IOException {
+        final Future<Void> future;
+        MessageType[] msgToWaitFor = msgToSend.messagesToWaitForUntilFutureCompletes();
+        if (msgToWaitFor == null) {
+            future = comms.broadcast(msgToSend);
+        } else {
+            future = comms.broadcast(msgToSend, msgToWaitFor);
         }
+        return future;
     }
 
     // this method will return null even if we know about the line

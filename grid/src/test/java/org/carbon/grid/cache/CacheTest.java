@@ -171,13 +171,13 @@ public class CacheTest {
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNotNull(line456);
             // since there are no sharers this line will be in status EXCLUSIVE
-            assertEquals(CacheLineState.OWNED, line456.getState());
+            assertEquals(CacheLineState.EXCLUSIVE, line456.getState());
             assertEquals(threeCaches.cache456.myNodeId, line456.getOwner());
             line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertEquals(CacheLineState.INVALID, line123.getState());
             assertEquals(threeCaches.cache456.myNodeId, line123.getOwner());
             // but as it turns out cache 789 never heard about the change in ownership
-            assertEquals(threeCaches.cache123.myNodeId, line789.getOwner());
+            assertEquals(threeCaches.cache456.myNodeId, line789.getOwner());
         } finally {
             closeThreeCaches(threeCaches);
         }
@@ -218,9 +218,6 @@ public class CacheTest {
             // TODO - fix ref count
             assertEquals(1, buffer456.refCnt());
             assertEqualsBites(testData.getBytes(), buffer456);
-            // I know, I know
-            // Thread.sleep() => Test.flap()
-            Thread.sleep(700);
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNotNull(line456);
             assertEquals(CacheLineState.EXCLUSIVE, line456.getState());

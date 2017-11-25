@@ -36,7 +36,6 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -102,13 +101,13 @@ class GridCommunications implements Closeable {
         addPeer(nodeId, SocketUtils.socketAddress(host, port));
     }
 
-    Future<Void> send(short toNode, Message msg) throws IOException {
+    CompletableFuture<Void> send(short toNode, Message msg) throws IOException {
         return innerSend(toNode, msg, new CarbonCompletableFuture());
     }
 
     // a broadcast today is just pinging every node
     // in the cluster in a loop
-    Future<Void> broadcast(Message msg) throws IOException {
+    CompletableFuture<Void> broadcast(Message msg) throws IOException {
         List<CompletableFuture<Void>> futures = new LinkedList<>();
         for (Short nodeId : nodeIdToClient.keySet()) {
             futures.add(innerSend(nodeId, msg.copy(), new CarbonCompletableFuture()));
@@ -116,7 +115,7 @@ class GridCommunications implements Closeable {
         return new CarbonCompletableFuture(futures);
     }
 
-    Future<Void> broadcast(Message msg, MessageType... waitForAnswersFrom) throws IOException {
+    CompletableFuture<Void> broadcast(Message msg, MessageType... waitForAnswersFrom) throws IOException {
         if (nodeIdToClient.isEmpty()) {
             // if there's no other nodes, there's nothing to do
             return CompletableFuture.completedFuture(null);
