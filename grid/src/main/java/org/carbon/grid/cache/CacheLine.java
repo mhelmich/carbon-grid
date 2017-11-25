@@ -50,8 +50,6 @@ class CacheLine {
     }
 
     void setState(CacheLineState state) {
-        // TODO -- if the state is set to INVALID
-        // I could go and aggressively purge data to free up memory
         this.state = state;
     }
 
@@ -97,6 +95,7 @@ class CacheLine {
     void releaseData() {
         if (data != null) {
             data.release();
+            data = null;
         }
     }
 

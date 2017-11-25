@@ -18,14 +18,16 @@ package org.carbon.grid.cache;
 
 import io.netty.buffer.ByteBuf;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
 /**
  * The interface to the in-memory cache.
  */
-public interface Cache {
+public interface Cache extends Closeable {
     int getMaxCacheLineSize();
+    ByteBuf allocateBuffer(int capacity);
     long allocateEmpty(Transaction txn) throws IOException;
     long allocateWithData(ByteBuf buffer, Transaction txn) throws IOException;
     long allocateWithData(ByteBuffer buffer, Transaction txn) throws IOException;

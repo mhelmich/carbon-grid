@@ -184,17 +184,17 @@ public class CacheTest {
     }
 
     @Test
-    public void testOwnershipMoveInvalidate() throws IOException {
+    public void testOwnershipMoveInvalidate() throws IOException, InterruptedException {
         ThreeCaches threeCaches = createCluster();
         String testData = "testing_test";
         try {
             // set a line in cache123 and verify all other caches
             // we expect nobody else to know about this cache line
             long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
-            ByteBuf localBB = threeCaches.cache123.get(newCacheLineId);
+            ByteBuf buffer123 = threeCaches.cache123.get(newCacheLineId);
             // TODO - fix ref count
-            assertEquals(1, localBB.refCnt());
-            assertEqualsBites(testData.getBytes(), localBB);
+            assertEquals(1, buffer123.refCnt());
+            assertEqualsBites(testData.getBytes(), buffer123);
             CacheLine line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertNotNull(line123);
             assertEquals(CacheLineState.EXCLUSIVE, line123.getState());
@@ -208,28 +208,47 @@ public class CacheTest {
             assertNotNull(line789);
 
             // transfer ownership to cache456
-            ByteBuf remoteBB = threeCaches.cache456.getx(newCacheLineId, null);
+            ByteBuf buffer456 = threeCaches.cache456.getx(newCacheLineId, null);
+            // now something fascinating happens:
+            // asynchronously one node will ask the other node to invalidate
+            // the line locally but that requires a bunch of messages to be sent
+            // and received and state changed here and there
+            // unfortunately that will take some time and I can't assert on any state
+            // ... at least without latching and waiting *sigh*
             // TODO - fix ref count
-            assertEquals(1, remoteBB.refCnt());
-            assertEqualsBites(testData.getBytes(), remoteBB);
+            assertEquals(1, buffer456.refCnt());
+            assertEqualsBites(testData.getBytes(), buffer456);
+            // I know, I know
+            // Thread.sleep() => Test.flap()
+            Thread.sleep(700);
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNotNull(line456);
-            // since there are no sharers this line will be in status EXCLUSIVE
-            assertEquals(CacheLineState.OWNED, line456.getState());
+            assertEquals(CacheLineState.EXCLUSIVE, line456.getState());
             assertEquals(threeCaches.cache456.myNodeId, line456.getOwner());
             line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertEquals(CacheLineState.INVALID, line123.getState());
             assertEquals(threeCaches.cache456.myNodeId, line123.getOwner());
-            // but as it turns out cache 789 never heard about the change in ownership
-            assertEquals(threeCaches.cache123.myNodeId, line789.getOwner());
-
+            // putx also sends messages to every sharer the invalidate line in question
+            // and then it also changes ownership in the process
+            assertEquals(threeCaches.cache456.myNodeId, line789.getOwner());
             // now we're trying to get the cache line from 789
             // that in turn should make a few round trips necessary
-            threeCaches.cache789.get(newCacheLineId);
-            assertEquals(CacheLineState.SHARED, line789.getState());
-            // TODO -- fix that test and find out when to do a remote get
-//            assertEquals(threeCaches.cache456.myNodeId, line789.getOwner());
-            assertEquals(threeCaches.cache123.myNodeId, line789.getOwner());
+            assertEquals(CacheLineState.INVALID, line789.getState());
+        } finally {
+            closeThreeCaches(threeCaches);
+        }
+    }
+
+    @Test
+    public void testAllocateByteBuf() throws IOException {
+        ThreeCaches threeCaches = createCluster();
+        try {
+            ByteBuf buffer = threeCaches.cache123.allocateBuffer(1024);
+            try {
+                assertEquals(1024, buffer.capacity());
+            } finally {
+                buffer.release();
+            }
         } finally {
             closeThreeCaches(threeCaches);
         }

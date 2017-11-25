@@ -17,12 +17,12 @@
 package org.carbon.grid.cache;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
@@ -53,7 +53,7 @@ import java.util.concurrent.TimeoutException;
  * - resilient memory across nodes (striping, backups, ...)
  *
  */
-class InternalCacheImpl implements InternalCache, Closeable {
+class InternalCacheImpl implements InternalCache {
     private final static Logger logger = LoggerFactory.getLogger(InternalCacheImpl.class);
     // pseudo unique cache line id generator
     // TODO -- the ids need to be globally unique
@@ -243,6 +243,15 @@ class InternalCacheImpl implements InternalCache, Closeable {
             owned.put(putx.lineId, oldLine);
             shared.remove(putx.lineId);
         }
+
+        CacheLine line = owned.get(putx.lineId);
+        for (short sharer : line.getSharers()) {
+            try {
+                comms.send(sharer, new Message.INV(myNodeId, putx.lineId));
+            } catch (IOException xcp) {
+                xcp.printStackTrace();
+            }
+        }
     }
 
     private void handlePUT(Message.PUT put) {
@@ -264,10 +273,14 @@ class InternalCacheImpl implements InternalCache, Closeable {
     private Message.Response handleINV(Message.INV inv) {
         logger.info("cache handler {} inv: {}", this, inv);
         CacheLine line = shared.get(inv.lineId);
-        if (line != null) {
+        if (line == null) {
+            line = new CacheLine(inv.lineId, -1, (short)-1, CacheLineState.INVALID, null);
+            shared.put(inv.lineId, line);
+        } else {
             // we're in luck I know the line
             line.setState(CacheLineState.INVALID);
             line.setOwner(inv.getSender());
+            line.releaseData();
         }
         return new Message.INVACK(
                 inv.getMessageSequenceNumber(),
@@ -342,6 +355,11 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     @Override
+    public ByteBuf allocateBuffer(int capacity) {
+        return PooledByteBufAllocator.DEFAULT.directBuffer(capacity);
+    }
+
+    @Override
     public long allocateEmpty(Transaction txn) throws IOException {
         long newLineId = nextClusterUniqueCacheLineId();
         CacheLine line = new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, CacheLineState.OWNED, null);
@@ -363,10 +381,11 @@ class InternalCacheImpl implements InternalCache, Closeable {
     }
 
     @Override
-    public long allocateWithData(byte[] bytes, Transaction txn) throws IOException {
-        ByteBuf buffer = Unpooled
-                .directBuffer(bytes.length)
-                .writeBytes(bytes);
+    public long allocateWithData(byte[] bites, Transaction txn) throws IOException {
+        ByteBuf buffer = PooledByteBufAllocator
+                .DEFAULT
+                .directBuffer(bites.length)
+                .writeBytes(bites);
         return allocateWithData(buffer, txn);
     }
 
