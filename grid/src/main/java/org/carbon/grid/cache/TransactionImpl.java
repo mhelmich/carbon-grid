@@ -20,7 +20,6 @@ import io.netty.buffer.ByteBuf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -30,7 +29,7 @@ import java.util.Map;
 /**
  * This class is obviously NOT THREAD SAFE!
  */
-class TransactionImpl implements Transaction, Closeable {
+class TransactionImpl implements Transaction {
     private final static Logger logger = LoggerFactory.getLogger(InternalCacheImpl.class);
     private final InternalCacheImpl cache;
     private final Map<Long, Undo> undoInfo = new HashMap<>();
@@ -58,13 +57,19 @@ class TransactionImpl implements Transaction, Closeable {
         lockedLines.add(lineId);
     }
 
-    void commit() {
+    @Override
+    public void commit() {
         try {
             // make all data changes
             for (Undo undo : undoInfo.values()) {
                 CacheLine line = cache.innerGetLineLocally(undo.lineId);
-                line.setVersion(undo.version);
-                line.setData(undo.buffer);
+                if (line == null) {
+                    line = new CacheLine(undo.lineId, undo.version, cache.myNodeId, CacheLineState.INVALID, undo.buffer);
+                    cache.putOwned(line);
+                } else {
+                    line.setVersion(undo.version);
+                    line.setData(undo.buffer);
+                }
             }
             // TODO -- send all messages
         } finally {
@@ -73,7 +78,8 @@ class TransactionImpl implements Transaction, Closeable {
         }
     }
 
-    void rollback() {
+    @Override
+    public void rollback() {
         try {
             for (Undo undoInfo : undoInfo.values()) {
                 try {

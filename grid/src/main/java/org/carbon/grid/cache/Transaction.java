@@ -16,5 +16,9 @@
 
 package org.carbon.grid.cache;
 
-public interface Transaction {
+import java.io.Closeable;
+
+public interface Transaction extends Closeable {
+    void commit();
+    void rollback();
 }

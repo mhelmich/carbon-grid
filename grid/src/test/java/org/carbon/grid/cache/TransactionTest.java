@@ -45,7 +45,7 @@ public class TransactionTest {
             line.lock();
             line.setData(initialBuffer);
             TransactionImpl txn = (TransactionImpl) cache.newTransaction();
-            txn.recordUndo(line.getId(), line.getVersion(), bufferToOverrideWith);
+            txn.recordUndo(line, bufferToOverrideWith);
             txn.commit();
             assertNotNull(line.resetReaderAndGetReadOnlyData());
             assertEquals(bufferToOverrideWith, line.resetReaderAndGetReadOnlyData());
@@ -76,7 +76,7 @@ public class TransactionTest {
             line.lock();
             line.setData(initialBuffer);
             TransactionImpl txn = (TransactionImpl) cache.newTransaction();
-            txn.recordUndo(line.getId(), line.getVersion(), bufferToOverrideWith);
+            txn.recordUndo(line, bufferToOverrideWith);
             txn.rollback();
             assertNotNull(line.resetReaderAndGetReadOnlyData());
             assertEquals(initialBuffer, line.resetReaderAndGetReadOnlyData());
