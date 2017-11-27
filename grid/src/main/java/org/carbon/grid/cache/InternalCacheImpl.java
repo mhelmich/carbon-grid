@@ -372,10 +372,18 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public long allocateEmpty(Transaction txn) throws IOException {
+        TransactionImpl t = (TransactionImpl) txn;
         long newLineId = nextClusterUniqueCacheLineId();
-        CacheLine line = new CacheLine(newLineId, 0, comms.myNodeId, CacheLineState.OWNED, null);
+        CacheLine line = new CacheLine(
+                newLineId,
+                0,
+                comms.myNodeId,
+                CacheLineState.EXCLUSIVE,
+                null
+        );
         line.lock();
         owned.put(line.getId(), line);
+        t.recordUndo(line, null);
         return line.getId();
     }
 
@@ -400,7 +408,13 @@ class InternalCacheImpl implements InternalCache {
 
     private CacheLine wrap(ByteBuf bytebuf) {
         long newLineId = nextClusterUniqueCacheLineId();
-        return new CacheLine(newLineId, 0, comms.myNodeId, CacheLineState.EXCLUSIVE, bytebuf);
+        return new CacheLine(
+                newLineId,
+                0,
+                comms.myNodeId,
+                CacheLineState.EXCLUSIVE,
+                bytebuf
+        );
     }
 
     @Override
@@ -426,10 +440,13 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public ByteBuf getx(long lineId, Transaction txn) throws IOException {
+        TransactionImpl t = (TransactionImpl) txn;
         CacheLine line = getxLineRemotely(lineId);
         if (line == null) {
             return null;
         } else {
+            line.lock();
+            t.addToLockedLines(line.getId());
             return line.resetReaderAndGetReadOnlyData().retain();
         }
     }
@@ -442,7 +459,7 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public void put(long lineId, ByteBuf buffer, Transaction txn) throws IOException {
-        TransactionImpl t = (TransactionImpl)txn;
+        TransactionImpl t = (TransactionImpl) txn;
         CacheLine line = getLineLocally(lineId);
         if (line == null || !CacheLineState.EXCLUSIVE.equals(line.getState())) {
             line = getxLineRemotely(lineId);

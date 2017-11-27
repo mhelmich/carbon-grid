@@ -53,7 +53,7 @@ class TransactionImpl implements Transaction {
         messagesToSend.add(msg);
     }
 
-    private void addToLockedLines(long lineId) {
+    void addToLockedLines(long lineId) {
         lockedLines.add(lineId);
     }
 

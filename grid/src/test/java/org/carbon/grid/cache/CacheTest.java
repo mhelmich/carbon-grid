@@ -89,11 +89,15 @@ public class CacheTest {
     public void testAllocateEmpty() throws IOException {
         ByteBuf buffer = null;
         try (InternalCacheImpl cache123 = new InternalCacheImpl(123, 5555)) {
-            long emptyBlock = cache123.allocateEmpty(null);
+            Transaction txn = cache123.newTransaction();
+            long emptyBlock = cache123.allocateEmpty(txn);
+            txn.commit();
             buffer = cache123.get(emptyBlock);
             assertNotNull(buffer);
             assertEquals(0, buffer.readableBytes());
             assertEquals(1, buffer.refCnt());
+            CacheLine line = cache123.innerGetLineLocally(emptyBlock);
+            assertEquals(CacheLineState.EXCLUSIVE, line.getState());
         } finally {
             releaseByteBuf(buffer);
         }
@@ -107,8 +111,10 @@ public class CacheTest {
         ByteBuf localBB2 = null;
         ByteBuf remoteBB = null;
         try {
+            Transaction txn = threeCaches.cache123.newTransaction();
             // set a line in cache123 and verify both caches
-            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
+            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), txn);
+            txn.commit();
             localBB = threeCaches.cache123.get(newCacheLineId);
             // one ref in the cache and one locally
             assertEquals(2, localBB.refCnt());
@@ -134,8 +140,10 @@ public class CacheTest {
             assertEquals(threeCaches.cache123.myNodeId, line123.getOwner());
             assertTrue(line123.getSharers().size() == 1);
 
+            txn = threeCaches.cache456.newTransaction();
             // transfer ownership to cache456
-            remoteBB = threeCaches.cache456.getx(newCacheLineId, null);
+            remoteBB = threeCaches.cache456.getx(newCacheLineId, txn);
+            txn.rollback();
             assertEquals(2, remoteBB.refCnt());
             // after getx both caches should not have a reference to the ByteBuf anymore
             // there should just be the local reference
@@ -166,9 +174,11 @@ public class CacheTest {
         ByteBuf localBB3 = null;
         ByteBuf remoteBB = null;
         try {
+            Transaction txn = threeCaches.cache123.newTransaction();
             // set a line in cache123 and verify all other caches
             // we expect nobody else to know about this cache line
-            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
+            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), txn);
+            txn.commit();
             localBB = threeCaches.cache123.get(newCacheLineId);
             assertEqualsBites(testData.getBytes(), localBB);
             assertEquals(2, localBB.refCnt());
@@ -201,8 +211,10 @@ public class CacheTest {
             assertEquals(CacheLineState.SHARED, line789.getState());
             assertTrue(line123.getSharers().size() == 2);
 
+            txn = threeCaches.cache456.newTransaction();
             // transfer ownership to cache456
-            remoteBB = threeCaches.cache456.getx(newCacheLineId, null);
+            remoteBB = threeCaches.cache456.getx(newCacheLineId, txn);
+            txn.rollback();
             assertEquals(2, remoteBB.refCnt());
             assertEquals(1, localBB.refCnt());
             assertEquals(1, localBB2.refCnt());
@@ -231,9 +243,11 @@ public class CacheTest {
         ByteBuf buffer123 = null;
         ByteBuf buffer456 = null;
         try {
+            Transaction txn = threeCaches.cache123.newTransaction();
             // set a line in cache123 and verify all other caches
             // we expect nobody else to know about this cache line
-            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
+            long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), txn);
+            txn.commit();
             buffer123 = threeCaches.cache123.get(newCacheLineId);
             assertEquals(2, buffer123.refCnt());
             assertEqualsBites(testData.getBytes(), buffer123);
@@ -249,8 +263,10 @@ public class CacheTest {
             line789 = threeCaches.cache789.innerGetLineLocally(newCacheLineId);
             assertNotNull(line789);
 
+            txn = threeCaches.cache456.newTransaction();
             // transfer ownership to cache456
-            buffer456 = threeCaches.cache456.getx(newCacheLineId, null);
+            buffer456 = threeCaches.cache456.getx(newCacheLineId, txn);
+            txn.rollback();
             // now something fascinating happens:
             // asynchronously one node will ask the other node to invalidate
             // the line locally but that requires a bunch of messages to be sent
