@@ -43,7 +43,7 @@ public class MessageSerializationTest {
         Message.PUT put = new Message.PUT(messageSequence, sender, lineId, 19, null);
         runTest(put);
 
-        ByteBuf buf = newRandomBuffer();
+        ByteBuf buf = newRandomBuffer().retain();
         try {
             put = new Message.PUT(messageSequence, sender, lineId, 19, buf);
             runTest(put);
@@ -59,7 +59,7 @@ public class MessageSerializationTest {
         Message.PUTX putx = new Message.PUTX(messageSequence, sender, lineId, -19, sharers, null);
         runTest(putx);
 
-        buf = newRandomBuffer();
+        buf = newRandomBuffer().retain();
         try {
             putx = new Message.PUTX(messageSequence, sender, lineId, -19, sharers, buf);
             runTest(putx);

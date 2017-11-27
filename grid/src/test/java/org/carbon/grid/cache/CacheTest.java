@@ -62,9 +62,11 @@ public class CacheTest {
         try {
             long newBlockId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
             localBB = threeCaches.cache123.get(newBlockId);
+            assertEquals(2, localBB.refCnt());
             assertEqualsBites(testData.getBytes(), localBB);
 
             remoteBB = threeCaches.cache456.get(newBlockId);
+            assertEquals(2, remoteBB.refCnt());
             assertEqualsBites(testData.getBytes(), remoteBB);
         } finally {
             releaseByteBuf(localBB, remoteBB);
@@ -91,6 +93,7 @@ public class CacheTest {
             buffer = cache123.get(emptyBlock);
             assertNotNull(buffer);
             assertEquals(0, buffer.readableBytes());
+            assertEquals(1, buffer.refCnt());
         } finally {
             releaseByteBuf(buffer);
         }
@@ -107,6 +110,7 @@ public class CacheTest {
             // set a line in cache123 and verify both caches
             long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
             localBB = threeCaches.cache123.get(newCacheLineId);
+            // one ref in the cache and one locally
             assertEquals(2, localBB.refCnt());
             assertEqualsBites(testData.getBytes(), localBB);
             CacheLine line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
@@ -118,6 +122,7 @@ public class CacheTest {
 
             // get the line in cache456 and verify the state in cache456
             localBB2 = threeCaches.cache456.get(newCacheLineId);
+            // one ref in the cache and one locally
             assertEquals(2, localBB2.refCnt());
             assertEqualsBites(testData.getBytes(), localBB2);
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
@@ -132,6 +137,10 @@ public class CacheTest {
             // transfer ownership to cache456
             remoteBB = threeCaches.cache456.getx(newCacheLineId, null);
             assertEquals(2, remoteBB.refCnt());
+            // after getx both caches should not have a reference to the ByteBuf anymore
+            // there should just be the local reference
+            assertEquals(1, localBB.refCnt());
+            assertEquals(1, localBB2.refCnt());
             assertEqualsBites(testData.getBytes(), remoteBB);
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNotNull(line456);
@@ -162,6 +171,7 @@ public class CacheTest {
             long newCacheLineId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
             localBB = threeCaches.cache123.get(newCacheLineId);
             assertEqualsBites(testData.getBytes(), localBB);
+            assertEquals(2, localBB.refCnt());
             CacheLine line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertNotNull(line123);
             assertEquals(CacheLineState.EXCLUSIVE, line123.getState());
@@ -174,6 +184,7 @@ public class CacheTest {
             // get the line in cache456 and verify the state in cache456
             localBB2 = threeCaches.cache456.get(newCacheLineId);
             assertEqualsBites(testData.getBytes(), localBB2);
+            assertEquals(2, localBB2.refCnt());
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNotNull(line456);
             assertEquals(CacheLineState.SHARED, line456.getState());
@@ -184,6 +195,7 @@ public class CacheTest {
             assertTrue(line123.getSharers().size() == 1);
             // pull the cache line into cache 3
             localBB3 = threeCaches.cache789.get(newCacheLineId);
+            assertEquals(2, localBB3.refCnt());
             assertEqualsBites(testData.getBytes(), localBB3);
             line789 = threeCaches.cache789.innerGetLineLocally(newCacheLineId);
             assertEquals(CacheLineState.SHARED, line789.getState());
@@ -191,6 +203,10 @@ public class CacheTest {
 
             // transfer ownership to cache456
             remoteBB = threeCaches.cache456.getx(newCacheLineId, null);
+            assertEquals(2, remoteBB.refCnt());
+            assertEquals(1, localBB.refCnt());
+            assertEquals(1, localBB2.refCnt());
+            assertEquals(1, localBB3.refCnt());
             assertEqualsBites(testData.getBytes(), remoteBB);
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNotNull(line456);

@@ -209,6 +209,7 @@ abstract class Message implements Persistable {
             if (data != null) {
                 out.writeInt(data.capacity());
                 out.writeByteBuf(data.resetReaderIndex());
+                data.release();
             } else {
                 out.writeInt(0);
             }
@@ -377,6 +378,7 @@ abstract class Message implements Persistable {
             } else {
                 out.writeInt(data.capacity());
                 out.writeByteBuf(data.resetReaderIndex());
+                data.release();
             }
         }
 

@@ -210,7 +210,7 @@ public class GridCommunicationsTest {
             return new Message.ACK(req.messageSequenceNumber, sender666, lineId);
         }).when(cacheMock666).handleRequest(any(Message.Request.class));
 
-        ByteBuf buffer = newRandomBuffer();
+        ByteBuf buffer = newRandomBuffer().retain();
         InternalCache cacheMock777 = Mockito.mock(InternalCache.class);
         doAnswer(inv -> {
             Message.Request req = inv.getArgumentAt(0, Message.Request.class);

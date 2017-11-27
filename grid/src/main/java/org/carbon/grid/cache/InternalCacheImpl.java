@@ -143,11 +143,13 @@ class InternalCacheImpl implements InternalCache {
             // let's demote the cache line to invalid,
             // pack it up and ship it to the requester
             Set<Short> sharersToSend = line.getSharers();
+            ByteBuf bufferToSend = line.resetReaderAndGetReadOnlyData().retain();
 
             // change local status and status of cache line
             line.setState(CacheLineState.INVALID);
             line.setOwner(getx.getSender());
             line.clearSharers();
+            line.releaseData();
             shared.put(getx.lineId, line);
 
             // massage sharers list
@@ -161,7 +163,7 @@ class InternalCacheImpl implements InternalCache {
                     line.getId(),
                     line.getVersion(),
                     sharersToSend,
-                    line.resetReaderAndGetReadOnlyData()
+                    bufferToSend
             );
         } else {
             // I'm not the owner
@@ -195,7 +197,8 @@ class InternalCacheImpl implements InternalCache {
                     myNodeId,
                     line.getId(),
                     line.getVersion(),
-                    line.resetReaderAndGetReadOnlyData());
+                    line.resetReaderAndGetReadOnlyData().retain()
+            );
         } else {
             line = shared.get(get.lineId);
             if (line != null) {
@@ -263,7 +266,7 @@ class InternalCacheImpl implements InternalCache {
         CacheLine line = shared.get(put.lineId);
         if (line == null) {
             line = new CacheLine(put.lineId, put.version, put.getSender(), CacheLineState.SHARED, put.data);
-            shared.put(line.getId(), line);
+            shared.put(put.lineId, line);
         } else {
             line.setVersion(put.version);
             line.setOwner(put.sender);
@@ -390,7 +393,7 @@ class InternalCacheImpl implements InternalCache {
 
     private CacheLine wrap(ByteBuf bytebuf) {
         long newLineId = nextClusterUniqueCacheLineId();
-        return new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, CacheLineState.EXCLUSIVE, bytebuf);
+        return new CacheLine(newLineId, 0, comms.myNodeId, CacheLineState.EXCLUSIVE, bytebuf);
     }
 
     @Override
