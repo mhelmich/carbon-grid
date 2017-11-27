@@ -26,8 +26,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -86,6 +84,7 @@ class InternalCacheImpl implements InternalCache {
     // KEEP THIS QUICK AND NIMBLE
     @Override
     public void handleResponse(Message.Response response) {
+        preHandler(response);
         switch (response.type) {
             case ACK:
                 handleACK((Message.ACK)response);
@@ -115,6 +114,7 @@ class InternalCacheImpl implements InternalCache {
     // KEEP THIS QUICK AND NIMBLE
     @Override
     public Message.Response handleRequest(Message.Request request) {
+        preHandler(request);
         switch (request.type) {
             case GET:
                 return handleGET((Message.GET)request);
@@ -124,6 +124,14 @@ class InternalCacheImpl implements InternalCache {
                 return handleINV((Message.INV)request);
             default:
                 throw new RuntimeException("Unknown type " + request.type);
+        }
+    }
+
+    private void preHandler(Message msg) {
+        long lineId = msg.lineId;
+        CacheLine line = innerGetLineLocally(lineId);
+        if (line != null && line.isLocked()) {
+            comms.addToCacheLineBacklog(msg);
         }
     }
 
@@ -376,10 +384,7 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public long allocateWithData(byte[] bites, Transaction txn) throws IOException {
-        ByteBuf buffer = PooledByteBufAllocator
-                .DEFAULT
-                .directBuffer(bites.length)
-                .writeBytes(bites);
+        ByteBuf buffer = allocateBuffer(bites.length).writeBytes(bites);
         return allocateWithData(buffer, txn);
     }
 
@@ -396,38 +401,53 @@ class InternalCacheImpl implements InternalCache {
             if (remoteLine == null) {
                 return null;
             } else {
-                return remoteLine.resetReaderAndGetReadOnlyData();
+                return remoteLine.resetReaderAndGetReadOnlyData().retain();
             }
         } else {
-            return line.resetReaderAndGetReadOnlyData();
+            return line.resetReaderAndGetReadOnlyData().retain();
         }
     }
 
     @Override
     public ByteBuffer getBB(long lineId) throws IOException {
+        // TODO -- redo this implementation to account for ref counting
         return get(lineId).nioBuffer();
     }
 
     @Override
     public ByteBuf getx(long lineId, Transaction txn) throws IOException {
-        return getxLineRemotely(lineId).resetReaderAndGetReadOnlyData();
+        CacheLine line = getxLineRemotely(lineId);
+        if (line == null) {
+            return null;
+        } else {
+            return line.resetReaderAndGetReadOnlyData().retain();
+        }
     }
 
     @Override
     public ByteBuffer getxBB(long lineId, Transaction txn) throws IOException {
+        // TODO -- redo this implementation to account for ref counting
         return getx(lineId, txn).nioBuffer();
     }
 
     @Override
-    public void put(long lineId, ByteBuf buffer, Transaction txn) {
+    public void put(long lineId, ByteBuf buffer, Transaction txn) throws IOException {
+        TransactionImpl t = (TransactionImpl)txn;
+        CacheLine line = getLineLocally(lineId);
+        if (line == null || !CacheLineState.EXCLUSIVE.equals(line.getState())) {
+            line = getxLineRemotely(lineId);
+        }
 
+        t.recordUndo(lineId, (line == null) ? 0 : line.getVersion(), buffer);
+        buffer.retain();
     }
 
     @Override
-    public void put(long lineId, ByteBuffer buffer, Transaction txn) {
+    public void put(long lineId, ByteBuffer buffer, Transaction txn) throws IOException {
         put(lineId, Unpooled.wrappedBuffer(buffer), txn);
     }
 
+    @Override
     public Transaction newTransaction() {
         return new TransactionImpl(this);
     }
@@ -442,19 +462,19 @@ class InternalCacheImpl implements InternalCache {
         }
 
         CacheLine line = owned.get(lineId);
-        List<CompletableFuture<Void>> invalidateFutures = new LinkedList<>();
-        for (short sharer : line.getSharers()) {
-            invalidateFutures.add(comms.send(sharer, new Message.INV(myNodeId, lineId)));
-        }
+        if (line == null) {
+            return null;
+        } else {
+            CompletableFuture<Void> invalidateFuture = comms.send(line.getSharers(), new Message.INV(myNodeId, lineId));
 
-        CarbonCompletableFuture invalidateFuture = new CarbonCompletableFuture(invalidateFutures);
-        try {
-            invalidateFuture.get(TIMEOUT_SECS, TimeUnit.SECONDS);
-        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
-            throw new IOException(xcp);
-        }
+            try {
+                invalidateFuture.get(TIMEOUT_SECS, TimeUnit.SECONDS);
+            } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
+                throw new IOException(xcp);
+            }
 
-        return getLineLocally(lineId);
+            return getLineLocally(lineId);
+        }
     }
 
     private CacheLine getLineRemotely(long lineId) throws IOException {
@@ -529,6 +549,10 @@ class InternalCacheImpl implements InternalCache {
             throw new IllegalStateException("Cache line " + lineId + " is about to be changed but it's in state " + lineToChange.getState());
         }
         txn.recordUndo(lineToChange, buffer);
+    }
+
+    void putOwned(CacheLine line) {
+        owned.put(line.getId(), line);
     }
 
     @Override

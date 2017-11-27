@@ -53,7 +53,7 @@ class TransactionImpl implements Transaction {
         messagesToSend.add(msg);
     }
 
-    void addToLockedLines(long lineId) {
+    private void addToLockedLines(long lineId) {
         lockedLines.add(lineId);
     }
 
@@ -67,6 +67,8 @@ class TransactionImpl implements Transaction {
                     line = new CacheLine(undo.lineId, undo.version, cache.myNodeId, CacheLineState.INVALID, undo.buffer);
                     cache.putOwned(line);
                 } else {
+                    line.setState(CacheLineState.EXCLUSIVE);
+                    line.setOwner(cache.myNodeId);
                     line.setVersion(undo.version);
                     line.setData(undo.buffer);
                 }

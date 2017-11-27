@@ -31,9 +31,12 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.LinkedList;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -101,18 +104,24 @@ class GridCommunications implements Closeable {
         addPeer(nodeId, SocketUtils.socketAddress(host, port));
     }
 
+    // use this for communication with a particular node
     CompletableFuture<Void> send(short toNode, Message msg) throws IOException {
-        return innerSend(toNode, msg, new CarbonCompletableFuture());
+        return CompletableFutureUtil.wrap(innerSend(toNode, msg));
+    }
+
+    // use this when invalidate needs to be sent to all sharers
+    CompletableFuture<Void> send(Collection<Short> toNodes, Message msg) throws IOException {
+        List<CompletableFuture<MessageType>> futures = new ArrayList<>(toNodes.size());
+        for (Short toNode : toNodes) {
+            futures.add(innerSend(toNode, msg.copy()));
+        }
+        return CompletableFutureUtil.waitForAllMessages(futures);
     }
 
     // a broadcast today is just pinging every node
     // in the cluster in a loop
     CompletableFuture<Void> broadcast(Message msg) throws IOException {
-        List<CompletableFuture<Void>> futures = new LinkedList<>();
-        for (Short nodeId : nodeIdToClient.keySet()) {
-            futures.add(innerSend(nodeId, msg.copy(), new CarbonCompletableFuture()));
-        }
-        return new CarbonCompletableFuture(futures);
+        return send(nodeIdToClient.keySet(), msg);
     }
 
     CompletableFuture<Void> broadcast(Message msg, MessageType... waitForAnswersFrom) throws IOException {
@@ -120,17 +129,18 @@ class GridCommunications implements Closeable {
             // if there's no other nodes, there's nothing to do
             return CompletableFuture.completedFuture(null);
         } else {
-            CarbonCompletableFuture f = new CarbonCompletableFuture(waitForAnswersFrom);
+            Set<CompletableFuture<MessageType>> futures = new HashSet<>(nodeIdToClient.size());
             for (Short toNode : nodeIdToClient.keySet()) {
                 // the other code waits for *all* messages to come back
                 // this code (as it is now) waits for all messages in waitForAnswersFrom to come back
-                innerSend(toNode, msg.copy(), f);
+                // or (if that doesn't happen) to complete when all child futures completes
+                futures.add(innerSend(toNode, msg.copy()));
             }
-            return f;
+            return CompletableFutureUtil.waitForAllMessagesOrSpecifiedList(futures, waitForAnswersFrom);
         }
     }
 
-    private CarbonCompletableFuture innerSend(short toNode, Message msg, CarbonCompletableFuture futureToUse) throws IOException {
+    private CompletableFuture<MessageType> innerSend(short toNode, Message msg) throws IOException {
         TcpGridClient client = nodeIdToClient.get(toNode);
         if (client == null) throw new RuntimeException("couldn't find client for node " + toNode + " and can't answer message " + msg.getMessageSequenceNumber());
 
@@ -138,6 +148,7 @@ class GridCommunications implements Closeable {
         // (relative) uniqueness is enough
         // this is not a sequence number that guarantees full ordering and no gaps
         msg.setMessageSequenceNumber(nextSequenceIdForMessageToSend());
+        CompletableFuture<MessageType> futureToUse = new CompletableFuture<>();
         // do bookkeeping in order to be able to track the response
         long hash = hashNodeIdMessageSeq(toNode, msg.getMessageSequenceNumber());
         messageIdToLatchAndMessage.put(hash, new LatchAndMessage(futureToUse, msg));
@@ -325,7 +336,7 @@ class GridCommunications implements Closeable {
             logger.info("{} [ackResponse] failure id {} sender {} hash {} message {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash, response);
         } else {
             logger.info("{} [ackResponse] success id {} sender {} hash {} message {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash, response);
-            lAndM.latch.complete(null, response.type);
+            lAndM.latch.complete(response.type);
         }
     }
 
@@ -370,9 +381,9 @@ class GridCommunications implements Closeable {
     }
 
     static class LatchAndMessage {
-        final CarbonCompletableFuture latch;
+        final CompletableFuture<MessageType> latch;
         final Message msg;
-        LatchAndMessage(CarbonCompletableFuture latch, Message msg) {
+        LatchAndMessage(CompletableFuture<MessageType> latch, Message msg) {
             this.latch = latch;
             this.msg = msg;
         }

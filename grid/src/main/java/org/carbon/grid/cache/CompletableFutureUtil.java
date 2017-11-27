@@ -25,16 +25,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 class CompletableFutureUtil {
     private CompletableFutureUtil() {}
 
+    // wraps a single future templatized with MessageType into the generic
+    // void future that is passed to the cache
     static CompletableFuture<Void> wrap(CompletableFuture<MessageType> future) {
         return CompletableFuture.allOf(future);
     }
 
+    // generates a future that completes if all futures passed in have completed
     static CompletableFuture<Void> waitForAllMessages(Collection<CompletableFuture<MessageType>> futures) {
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[0]));
     }
 
+    // generates a future that completes if either
+    // a) all passed in futures have completed
+    // or b) messages with the specified types have completed
+    // or c) if a single future completes with an exception
     static CompletableFuture<Void> waitForAllMessagesOrSpecifiedList(Collection<CompletableFuture<MessageType>> futures, MessageType... messagesToWaitFor) {
+        // generates a future that completes when all child futures have completed
         CompletableFuture<Void> promise = waitForAllMessages(futures);
+
+        // build of message type counter map
         NonBlockingHashMap<MessageType, AtomicInteger> typeToCount = new NonBlockingHashMap<>();
         for (MessageType type : messagesToWaitFor) {
             typeToCount.putIfAbsent(type, new AtomicInteger(0));
@@ -51,9 +61,12 @@ class CompletableFutureUtil {
                         }
                     }
                     if (typeToCount.isEmpty()) {
+                        // if the map is empty complete the parent future early
                         promise.complete(null);
                     }
                 } else {
+                    // if a single future completes with an error,
+                    // complete the parent future with an error as well
                     promise.completeExceptionally(xcp);
                 }
             });

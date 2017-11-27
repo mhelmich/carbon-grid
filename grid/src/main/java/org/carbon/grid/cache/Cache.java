@@ -36,6 +36,7 @@ public interface Cache extends Closeable {
     ByteBuffer getBB(long lineId) throws IOException;
     ByteBuf getx(long lineId, Transaction txn) throws IOException;
     ByteBuffer getxBB(long lineId, Transaction txn) throws IOException;
-    void put(long lineId, ByteBuf buffer, Transaction txn);
-    void put(long lineId, ByteBuffer buffer, Transaction txn);
+    void put(long lineId, ByteBuf buffer, Transaction txn) throws IOException;
+    void put(long lineId, ByteBuffer buffer, Transaction txn) throws IOException;
+    Transaction newTransaction();
 }
