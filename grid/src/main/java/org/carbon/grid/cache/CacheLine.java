@@ -134,7 +134,7 @@ class CacheLine {
 
     @Override
     public String toString() {
-        return "id: " + id + " state: " + state + " owner: " + owner + " sharers: " + sharers + " data size: " + ((data == null) ? 0 : data.capacity());
+        return "id: " + id + " version: " + version + " state: " + state + " owner: " + owner + " sharers: " + sharers + " data size: " + ((data == null) ? 0 : data.capacity());
     }
 
     void lock() {
