@@ -537,6 +537,11 @@ abstract class Message implements Persistable {
         public int hashCode() {
             return super.hashCode();
         }
+
+        @Override
+        INV copy() {
+            return new INV(sender, lineId);
+        }
     }
 
     static class INVACK extends Response {
