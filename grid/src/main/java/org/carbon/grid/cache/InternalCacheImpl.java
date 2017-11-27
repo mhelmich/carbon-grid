@@ -235,7 +235,13 @@ class InternalCacheImpl implements InternalCache {
         if (oldLine == null) {
             // looks like I didn't have this log line before
             // pure luxury, I can create a brand new object
-            CacheLine newLine = new CacheLine(putx.lineId, putx.version, myNodeId, putx.sharers.isEmpty() ? CacheLineState.EXCLUSIVE : CacheLineState.OWNED, putx.data);
+            CacheLine newLine = new CacheLine(
+                    putx.lineId,
+                    putx.version,
+                    myNodeId,
+                    putx.sharers.isEmpty() ? CacheLineState.EXCLUSIVE : CacheLineState.OWNED,
+                    putx.data
+            );
             newLine.setSharers(putx.sharers);
             owned.put(putx.lineId, newLine);
         } else {
@@ -361,13 +367,14 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public ByteBuf allocateBuffer(int capacity) {
-        return PooledByteBufAllocator.DEFAULT.directBuffer(capacity);
+        return PooledByteBufAllocator.DEFAULT.directBuffer(capacity, getMaxCacheLineSize());
     }
 
     @Override
     public long allocateEmpty(Transaction txn) throws IOException {
         long newLineId = nextClusterUniqueCacheLineId();
-        CacheLine line = new CacheLine(newLineId, Integer.MIN_VALUE, comms.myNodeId, CacheLineState.OWNED, null);
+        CacheLine line = new CacheLine(newLineId, 0, comms.myNodeId, CacheLineState.OWNED, null);
+        line.lock();
         owned.put(line.getId(), line);
         return line.getId();
     }
@@ -439,9 +446,20 @@ class InternalCacheImpl implements InternalCache {
         CacheLine line = getLineLocally(lineId);
         if (line == null || !CacheLineState.EXCLUSIVE.equals(line.getState())) {
             line = getxLineRemotely(lineId);
+            if (line == null) {
+                line = new CacheLine(
+                        lineId,
+                        0,
+                        myNodeId,
+                        CacheLineState.EXCLUSIVE,
+                        null
+                );
+                owned.put(lineId, line);
+            }
         }
 
-        t.recordUndo(lineId, (line == null) ? 0 : line.getVersion(), buffer);
+        line.lock();
+        t.recordUndo(line, buffer);
         buffer.retain();
     }
 
@@ -552,10 +570,6 @@ class InternalCacheImpl implements InternalCache {
             throw new IllegalStateException("Cache line " + lineId + " is about to be changed but it's in state " + lineToChange.getState());
         }
         txn.recordUndo(lineToChange, buffer);
-    }
-
-    void putOwned(CacheLine line) {
-        owned.put(line.getId(), line);
     }
 
     @Override

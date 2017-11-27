@@ -141,7 +141,7 @@ class CacheLine {
         while (!isLocked.compareAndSet(false, true)) {
             try {
                 // give up the thread and try again later
-                Thread.sleep(3);
+                Thread.sleep(1);
             } catch (InterruptedException xcp) {
                 throw new RuntimeException(xcp);
             }

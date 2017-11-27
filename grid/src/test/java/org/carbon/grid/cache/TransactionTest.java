@@ -52,7 +52,7 @@ public class TransactionTest {
         }
     }
 
-    @Test
+    @Test(expected = IllegalStateException.class)
     public void testCommitNoExistingLine() throws IOException {
         ByteBuf buffer = newRandomBuffer();
 
@@ -63,8 +63,6 @@ public class TransactionTest {
             TransactionImpl txn = (TransactionImpl) cache.newTransaction();
             txn.recordUndo(lineId, newVersion, buffer);
             txn.commit();
-
-            assertNotNull(cache.innerGetLineLocally(lineId));
         }
     }
 

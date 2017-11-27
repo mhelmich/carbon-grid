@@ -63,15 +63,16 @@ class TransactionImpl implements Transaction {
             // make all data changes
             for (Undo undo : undoInfo.values()) {
                 CacheLine line = cache.innerGetLineLocally(undo.lineId);
-                if (line == null) {
-                    line = new CacheLine(undo.lineId, undo.version, cache.myNodeId, CacheLineState.INVALID, undo.buffer);
-                    cache.putOwned(line);
-                } else {
-                    line.setState(CacheLineState.EXCLUSIVE);
-                    line.setOwner(cache.myNodeId);
-                    line.setVersion(undo.version);
-                    line.setData(undo.buffer);
-                }
+                // cache lines need to exist locally
+                if (line == null) throw new IllegalStateException("Line with id " + undo.lineId + " doesn't exist");
+                // cache lines need to be locked
+                if (!line.isLocked()) throw new IllegalStateException("Cache line " + line.getId() + " is not in state locked");
+                // cache lines need to be in exclusive state
+                if (!CacheLineState.EXCLUSIVE.equals(line.getState())) throw new IllegalStateException("Cache line with id " + undo.lineId + " is not in EXCLUSIVE state");
+
+                line.setOwner(cache.myNodeId);
+                line.setVersion(undo.version);
+                line.setData(undo.buffer);
             }
             // TODO -- send all messages
         } finally {
