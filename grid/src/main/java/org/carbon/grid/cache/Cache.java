@@ -33,9 +33,7 @@ public interface Cache extends Closeable {
     long allocateWithData(ByteBuffer buffer, Transaction txn) throws IOException;
     long allocateWithData(byte[] bytes, Transaction txn) throws IOException;
     ByteBuf get(long lineId) throws IOException;
-    ByteBuffer getBB(long lineId) throws IOException;
     ByteBuf getx(long lineId, Transaction txn) throws IOException;
-    ByteBuffer getxBB(long lineId, Transaction txn) throws IOException;
     void put(long lineId, ByteBuf buffer, Transaction txn) throws IOException;
     void put(long lineId, ByteBuffer buffer, Transaction txn) throws IOException;
     Transaction newTransaction();

@@ -433,12 +433,6 @@ class InternalCacheImpl implements InternalCache {
     }
 
     @Override
-    public ByteBuffer getBB(long lineId) throws IOException {
-        // TODO -- redo this implementation to account for ref counting
-        return get(lineId).nioBuffer();
-    }
-
-    @Override
     public ByteBuf getx(long lineId, Transaction txn) throws IOException {
         TransactionImpl t = (TransactionImpl) txn;
         CacheLine line = getxLineRemotely(lineId);
@@ -449,12 +443,6 @@ class InternalCacheImpl implements InternalCache {
             t.addToLockedLines(line.getId());
             return line.resetReaderAndGetReadOnlyData().retain();
         }
-    }
-
-    @Override
-    public ByteBuffer getxBB(long lineId, Transaction txn) throws IOException {
-        // TODO -- redo this implementation to account for ref counting
-        return getx(lineId, txn).nioBuffer();
     }
 
     @Override
