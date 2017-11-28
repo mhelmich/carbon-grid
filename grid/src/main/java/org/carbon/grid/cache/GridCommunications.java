@@ -17,6 +17,11 @@
 package org.carbon.grid.cache;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalListeners;
 import com.google.common.hash.Hashing;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
@@ -39,6 +44,8 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -66,10 +73,35 @@ class GridCommunications implements Closeable {
     private final EventLoopGroup workerGroup = new NioEventLoopGroup();
 
     private final NonBlockingHashMapLong<LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMapLong<>();
-    // TODO -- the map holding all connections could morph into a guava cache
     // we'd need to keep track of the connection info separately though
     // that could reduce the number of open connections if we don't really need them
-    private final NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient = new NonBlockingHashMap<>();
+    private final NonBlockingHashMap<Short, InetSocketAddress> nodeIdToSocketAddress = new NonBlockingHashMap<>();
+    private final CacheLoader<Short, TcpGridClient> loader = new CacheLoader<Short, TcpGridClient>() {
+        @Override
+        public TcpGridClient load(Short nodeId) throws Exception {
+            InetSocketAddress addr = nodeIdToSocketAddress.get(nodeId);
+            if (addr == null) {
+                logger.error("I can't find a socket address for node with id: " + nodeId);
+                throw new NullPointerException("Can't find a socket address for node with id: " + nodeId);
+            } else {
+                return new TcpGridClient(nodeId, addr, workerGroup, internalCache);
+            }
+        }
+    };
+
+    private final RemovalListener<Short, TcpGridClient> removalListener = RemovalListeners.asynchronous(removalNotification -> {
+        try {
+            removalNotification.getValue().close();
+        } catch (IOException xcp) {
+            logger.error("", xcp);
+        }
+    }, workerGroup);
+
+    private final LoadingCache<Short, TcpGridClient> nodeIdToClient = CacheBuilder.newBuilder()
+        .expireAfterAccess(15, TimeUnit.MINUTES)
+        .removalListener(removalListener)
+        .build(loader);
+
     private final NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> cacheLineIdToBacklog = new NonBlockingHashMapLong<>();
 
     private final AtomicInteger sequence = new AtomicInteger(new Random().nextInt());
@@ -97,7 +129,7 @@ class GridCommunications implements Closeable {
 
     private void addPeer(short nodeId, InetSocketAddress addr) {
         logger.info("adding peer {} {}", nodeId, addr);
-        nodeIdToClient.put(nodeId, new TcpGridClient(nodeId, addr, workerGroup, internalCache));
+        nodeIdToSocketAddress.put(nodeId, addr);
     }
 
     void addPeer(short nodeId, String host, int port) {
@@ -121,16 +153,16 @@ class GridCommunications implements Closeable {
     // a broadcast today is just pinging every node
     // in the cluster in a loop
     CompletableFuture<Void> broadcast(Message msg) throws IOException {
-        return send(nodeIdToClient.keySet(), msg);
+        return send(nodeIdToSocketAddress.keySet(), msg);
     }
 
     CompletableFuture<Void> broadcast(Message msg, MessageType... waitForAnswersFrom) throws IOException {
-        if (nodeIdToClient.isEmpty()) {
+        if (nodeIdToSocketAddress.isEmpty()) {
             // if there's no other nodes, there's nothing to do
             return CompletableFuture.completedFuture(null);
         } else {
-            Set<CompletableFuture<MessageType>> futures = new HashSet<>(nodeIdToClient.size());
-            for (Short toNode : nodeIdToClient.keySet()) {
+            Set<CompletableFuture<MessageType>> futures = new HashSet<>(nodeIdToSocketAddress.size());
+            for (Short toNode : nodeIdToSocketAddress.keySet()) {
                 // the other code waits for *all* messages to come back
                 // this code (as it is now) waits for all messages in waitForAnswersFrom to come back
                 // or (if that doesn't happen) to complete when all child futures completes
@@ -141,7 +173,12 @@ class GridCommunications implements Closeable {
     }
 
     private CompletableFuture<MessageType> innerSend(short toNode, Message msg) throws IOException {
-        TcpGridClient client = nodeIdToClient.get(toNode);
+        TcpGridClient client;
+        try {
+            client = nodeIdToClient.get(toNode);
+        } catch (ExecutionException xcp) {
+            throw new IOException(xcp);
+        }
         if (client == null) throw new RuntimeException("couldn't find client for node " + toNode + " and can't answer message " + msg.getMessageSequenceNumber());
 
         // generate message id
@@ -179,7 +216,12 @@ class GridCommunications implements Closeable {
             return;
         }
 
-        TcpGridClient client = nodeIdToClient.get(toNode);
+        TcpGridClient client;
+        try {
+            client = nodeIdToClient.get(toNode);
+        } catch (ExecutionException xcp) {
+            throw new RuntimeException(xcp);
+        }
         if (client == null) {
             RuntimeException rte = new RuntimeException("couldn't find client for node " + toNode + " and can't answer message " + requestToSend.getMessageSequenceNumber());
             lAndM.latch.completeExceptionally(rte);
@@ -312,7 +354,12 @@ class GridCommunications implements Closeable {
 
     // doesn't block
     private void sendResponse(short nodeId, Message msg) {
-        TcpGridClient client = nodeIdToClient.get(nodeId);
+        TcpGridClient client;
+        try {
+            client = nodeIdToClient.get(nodeId);
+        } catch (ExecutionException xcp) {
+            throw new RuntimeException(xcp);
+        }
         if (client == null) throw new RuntimeException("couldn't find client for node " + nodeId + " and can't answer message " + msg.getMessageSequenceNumber());
         try {
             client.send(msg).addListener(new RetryingCompleteListener(nodeId, msg, nodeIdToClient));
@@ -365,9 +412,7 @@ class GridCommunications implements Closeable {
 
     @Override
     public void close() throws IOException {
-        for (TcpGridClient client : nodeIdToClient.values()) {
-            closeQuietly(client);
-        }
+        nodeIdToClient.invalidateAll();
         closeQuietly(tcpGridServer);
         workerGroup.shutdownGracefully();
         bossGroup.shutdownGracefully();
@@ -401,14 +446,14 @@ class GridCommunications implements Closeable {
     private static class RetryingCompleteListener implements ChannelFutureListener {
         private final short nodeId;
         private final Message msg;
-        private final NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient;
+        private final LoadingCache<Short, TcpGridClient> nodeIdToClient;
         private final int count;
 
-        RetryingCompleteListener(short nodeId, Message msg, NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient) {
+        RetryingCompleteListener(short nodeId, Message msg, LoadingCache<Short, TcpGridClient> nodeIdToClient) {
             this(nodeId, msg, nodeIdToClient, 0);
         }
 
-        RetryingCompleteListener(short nodeId, Message msg, NonBlockingHashMap<Short, TcpGridClient> nodeIdToClient, int count) {
+        RetryingCompleteListener(short nodeId, Message msg, LoadingCache<Short, TcpGridClient> nodeIdToClient, int count) {
             this.nodeId = nodeId;
             this.msg = msg;
             this.nodeIdToClient = nodeIdToClient;

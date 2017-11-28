@@ -16,10 +16,10 @@
 
 package org.carbon.grid.cache;
 
+import com.google.common.cache.LoadingCache;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.ChannelFuture;
-import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -255,10 +255,10 @@ public class GridCommunicationsTest {
     }
 
     @SuppressWarnings("unchecked")
-    private NonBlockingHashMap<Short, TcpGridClient> getNodeIdToClient(GridCommunications comms) throws IllegalAccessException, NoSuchFieldException {
+    private LoadingCache<Short, TcpGridClient> getNodeIdToClient(GridCommunications comms) throws IllegalAccessException, NoSuchFieldException {
         Field field = GridCommunications.class.getDeclaredField("nodeIdToClient");
         field.setAccessible(true);
-        return (NonBlockingHashMap<Short, TcpGridClient>) field.get(comms);
+        return (LoadingCache<Short, TcpGridClient>) field.get(comms);
     }
 
     private ByteBuf newRandomBuffer() {
