@@ -60,7 +60,9 @@ public class CacheTest {
         ByteBuf localBB = null;
         ByteBuf remoteBB = null;
         try {
-            long newBlockId = threeCaches.cache123.allocateWithData(testData.getBytes(), null);
+            Transaction txn = threeCaches.cache123.newTransaction();
+            long newBlockId = threeCaches.cache123.allocateWithData(testData.getBytes(), txn);
+            txn.commit();
             localBB = threeCaches.cache123.get(newBlockId);
             assertEquals(2, localBB.refCnt());
             assertEqualsBites(testData.getBytes(), localBB);

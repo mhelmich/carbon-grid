@@ -389,8 +389,20 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public long allocateWithData(ByteBuf buffer, Transaction txn) throws IOException {
+        TransactionImpl t = (TransactionImpl) txn;
         if (buffer.capacity() > getMaxCacheLineSize()) throw new IllegalArgumentException("Buffer too big! The buffer can only have a max size of " + getMaxCacheLineSize() + " bytes");
-        CacheLine line = wrap(buffer);
+
+        long newLineId = nextClusterUniqueCacheLineId();
+        CacheLine line = new CacheLine(
+                newLineId,
+                0,
+                comms.myNodeId,
+                CacheLineState.EXCLUSIVE,
+                null
+        );
+
+        line.lock();
+        t.recordUndo(line, buffer);
         owned.put(line.getId(), line);
         return line.getId();
     }
@@ -404,17 +416,6 @@ class InternalCacheImpl implements InternalCache {
     public long allocateWithData(byte[] bites, Transaction txn) throws IOException {
         ByteBuf buffer = allocateBuffer(bites.length).writeBytes(bites);
         return allocateWithData(buffer, txn);
-    }
-
-    private CacheLine wrap(ByteBuf bytebuf) {
-        long newLineId = nextClusterUniqueCacheLineId();
-        return new CacheLine(
-                newLineId,
-                0,
-                comms.myNodeId,
-                CacheLineState.EXCLUSIVE,
-                bytebuf
-        );
     }
 
     @Override
