@@ -14,17 +14,9 @@
  * limitations under the License.
  */
 
-package org.carbon.grid;
+package org.carbon.grid.cluster;
 
-import org.carbon.grid.cache.Cache;
-import org.carbon.grid.cluster.Cluster;
+import java.io.Closeable;
 
-public class Grid {
-    public Cache getCache() {
-        return null;
-    }
-
-    public Cluster getCluster() {
-        return null;
-    }
+public interface Cluster extends Closeable {
 }
