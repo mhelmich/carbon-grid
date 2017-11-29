@@ -19,4 +19,8 @@ package org.carbon.grid.cluster;
 import java.io.Closeable;
 
 public interface Cluster extends Closeable {
+    enum EventType {
+        ADD,
+        REMOVE,
+    }
 }

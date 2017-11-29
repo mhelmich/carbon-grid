@@ -16,36 +16,54 @@
 
 package org.carbon.grid.cluster;
 
+import com.google.common.base.Optional;
 import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
 import com.orbitz.consul.ConsulException;
 import com.orbitz.consul.KeyValueClient;
 import com.orbitz.consul.NotRegisteredException;
+import com.orbitz.consul.model.kv.Value;
 import com.orbitz.consul.model.session.ImmutableSession;
 import com.orbitz.consul.model.session.Session;
+import com.orbitz.consul.option.ImmutablePutOptions;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 class ConsulCluster implements Cluster {
     private final static Logger logger = LoggerFactory.getLogger(ConsulCluster.class);
     private final static long CONSUL_TIMEOUT_SECS = 30L;
-    final static int MIN_NODE_ID = 500;
     private final static String NODE_ID_KEY_PREFIX = "node-ids/node-id-";
+    private final static String CACHE_LINE_ID_KEY = "cache-lines/running-cache-line-id";
     private final static String serviceName = "carbon-grid";
+    private final static int NUM_RETRIES = 10;
+    private final static int ID_CHUNK_SIZE = 1000;
+
     private final Consul consul;
     private final String consulSessionId;
-    final String myNodeId;
+    private final ScheduledExecutorService executorService;
+    private final LinkedBlockingQueue<Long> nextCacheLineIds = new LinkedBlockingQueue<>(ID_CHUNK_SIZE);
+    private final AtomicLong highWaterMarkCacheLineId = new AtomicLong(0);
 
-    private final ScheduledExecutorService healthCheckES;
+    private BiConsumer<EventType, InetSocketAddress> peerHandler;
+
+    final static int MIN_NODE_ID = 500;
+
+    final String myNodeId;
 
     ConsulCluster(int myServicePort) {
         consul = Consul.builder()
@@ -53,9 +71,13 @@ class ConsulCluster implements Cluster {
                 .build();
         consulSessionId = createConsulSession();
         myNodeId = findMyNodeId();
-        healthCheckES = registerMyself(myServicePort);
+        executorService = registerMyself(myServicePort);
+        setDefaultCacheLineIdSeed();
+        fireUpIdAllocator();
 
-//        List<ServiceHealth> nodes = consul.healthClient().getHealthyServiceInstances(serviceName).getResponse();
+        // TODO -- add other peers at startup
+        // TODO -- register callback in case node availability changes
+        //List<ServiceHealth> nodes = consul.healthClient().getHealthyServiceInstances(serviceName).getResponse();
     }
 
     private String createConsulSession() {
@@ -77,36 +99,51 @@ class ConsulCluster implements Cluster {
     // - then try to exclusively lock that key with the calculated id
     // - if I could get the lock, take it and be done
     // --- if not, loop all over again and calculate a new node id until I succeed
-    private String findMyNodeId() {
+    protected String findMyNodeId() {
         KeyValueClient kvClient = consul.keyValueClient();
         int counter = 0;
         String myTentativeNodeId;
         do {
-            List<String> takenKeys;
-            try {
-                takenKeys = kvClient.getKeys(NODE_ID_KEY_PREFIX);
-            } catch (ConsulException xcp) {
-                if (xcp.getCode() == 404) {
-                    try {
-                        Thread.sleep(counter * 500);
-                        counter++;
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
-                    takenKeys = Collections.emptyList();
-                } else {
-                    logger.error("", xcp);
-                    throw new RuntimeException(xcp);
-                }
+            if (counter > 0 && counter < NUM_RETRIES) {
+                sleep(500 * counter);
+            } else if (counter > NUM_RETRIES) {
+                throw new RuntimeException("Can't acquire a new node id");
             }
+            counter++;
+            List<String> takenKeys = listKeys(kvClient, NODE_ID_KEY_PREFIX);
             myTentativeNodeId = calcNextNodeId(takenKeys);
         } while (!kvClient.acquireLock(NODE_ID_KEY_PREFIX + myTentativeNodeId, consulSessionId));
         kvClient.putValue(NODE_ID_KEY_PREFIX + myTentativeNodeId, myTentativeNodeId);
         return myTentativeNodeId;
     }
 
+    private List<String> listKeys(KeyValueClient kvClient, String nodePrefix) {
+        try {
+            return kvClient.getKeys(nodePrefix);
+        } catch (ConsulException xcp) {
+            if (xcp.getCode() == 404) {
+                return Collections.emptyList();
+            } else {
+                logger.error("", xcp);
+                throw xcp;
+            }
+        }
+    }
+
+    private void sleep(int ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException xcp) {
+            throw new RuntimeException(xcp);
+        }
+    }
+
+    private void setDefaultCacheLineIdSeed() {
+        consul.keyValueClient().putValue(CACHE_LINE_ID_KEY, String.valueOf(Long.MIN_VALUE), 0L, ImmutablePutOptions.builder().cas(0L).build());
+    }
+
     // this method calculates the next node id in a list of all existing node ids
-    private String calcNextNodeId(List<String> takenKeys) {
+    protected String calcNextNodeId(List<String> takenKeys) {
         if (takenKeys.isEmpty()) {
             return String.valueOf(MIN_NODE_ID);
         }
@@ -130,7 +167,7 @@ class ConsulCluster implements Cluster {
             }
         }
 
-        if (takenKeys.size() > Short.MAX_VALUE) {
+        if (MIN_NODE_ID + takenKeys.size() > Short.MAX_VALUE) {
             throw new RuntimeException("No more node ids to allocate");
         } else {
             return String.valueOf(MIN_NODE_ID + takenKeys.size());
@@ -164,6 +201,45 @@ class ConsulCluster implements Cluster {
         return es;
     }
 
+    Pair<Long, Long> allocateIds(int numIdsToAllocate) {
+        Long currentlyHighestCacheLineId = 0L;
+        Long modifyIndex = 0L;
+
+        do {
+            Optional<Value> valueOpt = consul.keyValueClient().getValue(CACHE_LINE_ID_KEY);
+            if (valueOpt.isPresent()) {
+                modifyIndex = valueOpt.get().getModifyIndex();
+                Optional<String> vOpt = valueOpt.get().getValueAsString();
+                if (vOpt.isPresent()) {
+                    currentlyHighestCacheLineId = Long.valueOf(vOpt.get());
+                }
+            }
+            if (currentlyHighestCacheLineId + numIdsToAllocate > Long.MAX_VALUE) throw new IllegalStateException("Can't allocate cache line id " + (currentlyHighestCacheLineId + numIdsToAllocate));
+            if (currentlyHighestCacheLineId == 0) throw new IllegalStateException("Can't allocate new cache line ids");
+        } while (!consul.keyValueClient().putValue(CACHE_LINE_ID_KEY, String.valueOf(currentlyHighestCacheLineId + numIdsToAllocate), 0L, ImmutablePutOptions.builder().cas(modifyIndex).build()));
+        return Pair.of(currentlyHighestCacheLineId - numIdsToAllocate, currentlyHighestCacheLineId);
+    }
+
+    private void fireUpIdAllocator() {
+        executorService.submit(() -> {
+            Pair<Long, Long> idChunk = allocateIds(ID_CHUNK_SIZE);
+            highWaterMarkCacheLineId.set(idChunk.getRight());
+            for (long i = idChunk.getLeft(); i < idChunk.getRight(); i++) {
+                nextCacheLineIds.offer(i);
+            }
+        });
+    }
+
+    Supplier<Long> getIdSupplier() {
+        return () -> {
+            Long id = nextCacheLineIds.poll();
+            if (highWaterMarkCacheLineId.get() - id < 50) {
+                fireUpIdAllocator();
+            }
+            return id;
+        };
+    }
+
     @Override
     public String toString() {
         return "sessionId: " + consulSessionId + " myNodeId: " + myNodeId;
@@ -178,7 +254,7 @@ class ConsulCluster implements Cluster {
                 consul.sessionClient().destroySession(consulSessionId);
             } finally {
                 try {
-                    healthCheckES.shutdown();
+                    executorService.shutdown();
                 } finally {
                     consul.destroy();
                 }
