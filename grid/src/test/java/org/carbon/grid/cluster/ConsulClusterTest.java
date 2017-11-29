@@ -22,7 +22,9 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -46,15 +48,22 @@ public class ConsulClusterTest {
 
     @Test
     public void testRegisterMultipleClusters() throws IOException {
+        Set<String> nodeIds = new HashSet<String>() {{
+            add(String.valueOf(ConsulCluster.MIN_NODE_ID));
+            add(String.valueOf(ConsulCluster.MIN_NODE_ID + 1));
+            add(String.valueOf(ConsulCluster.MIN_NODE_ID + 2));
+        }};
         try (ConsulCluster cluster123 = new ConsulCluster(7777)) {
             try (ConsulCluster cluster456 = new ConsulCluster(8888)) {
                 try (ConsulCluster cluster789 = new ConsulCluster(9999)) {
-                    assertEquals(String.valueOf(ConsulCluster.MIN_NODE_ID), cluster123.myNodeId);
-                    assertEquals(String.valueOf(ConsulCluster.MIN_NODE_ID + 1), cluster456.myNodeId);
-                    assertEquals(String.valueOf(ConsulCluster.MIN_NODE_ID + 2), cluster789.myNodeId);
+                    assertTrue(nodeIds.remove(cluster123.myNodeId));
+                    assertTrue(nodeIds.remove(cluster456.myNodeId));
+                    assertTrue(nodeIds.remove(cluster789.myNodeId));
                 }
             }
         }
+
+        assertTrue(nodeIds.isEmpty());
     }
 
     @Test
@@ -67,6 +76,7 @@ public class ConsulClusterTest {
         consul.keyValueClient().putValue( prefix + "-500", "500");
         consul.keyValueClient().putValue( prefix + "-501", "501");
         consul.keyValueClient().putValue( prefix + "-502", "502");
+        // GAP
         consul.keyValueClient().putValue( prefix + "-504", "504");
         consul.keyValueClient().putValue( prefix + "-505", "505");
 
