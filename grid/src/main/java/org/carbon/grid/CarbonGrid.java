@@ -19,7 +19,7 @@ package org.carbon.grid;
 import org.carbon.grid.cache.Cache;
 import org.carbon.grid.cluster.Cluster;
 
-public class Grid {
+public class CarbonGrid {
     public Cache getCache() {
         return null;
     }
