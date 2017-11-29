@@ -27,6 +27,7 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.Future;
 import io.netty.util.internal.SocketUtils;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
@@ -71,8 +72,8 @@ class GridCommunications implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(GridCommunications.class);
     private final static int RESPONSE_SEND_RETRIES = 3;
     private final static int RESPONSE_SEND_RETRIES_WAIT = 100;
-    private final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
-    private final EventLoopGroup workerGroup = new NioEventLoopGroup();
+    private final EventLoopGroup bossGroup = new NioEventLoopGroup(1, new DefaultThreadFactory("netty-boss-group"));
+    private final EventLoopGroup workerGroup = new NioEventLoopGroup(0, new DefaultThreadFactory("netty-worker-group"));
 
     private final NonBlockingHashMapLong<LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMapLong<>();
     // we'd need to keep track of the connection info separately though
