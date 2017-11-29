@@ -16,26 +16,34 @@
 
 package org.carbon.grid.cluster;
 
-import com.google.common.base.Optional;
 import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
+import com.orbitz.consul.ConsulException;
 import com.orbitz.consul.KeyValueClient;
 import com.orbitz.consul.NotRegisteredException;
-import com.orbitz.consul.model.kv.Value;
-import com.orbitz.consul.option.ImmutablePutOptions;
+import com.orbitz.consul.model.session.ImmutableSession;
+import com.orbitz.consul.model.session.Session;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 class ConsulCluster implements Cluster {
-
-    private final static long CONSUL_TIMEOUT = 4L;
-    private final static String NODE_ID_KEY = "NODE_ID";
+    private final static Logger logger = LoggerFactory.getLogger(ConsulCluster.class);
+    private final static long CONSUL_TIMEOUT_SECS = 30L;
+    final static int MIN_NODE_ID = 500;
+    private final static String NODE_ID_KEY_PREFIX = "node-ids/node-id-";
     private final static String serviceName = "carbon-grid";
     private final Consul consul;
-    private final String myNodeId;
+    private final String consulSessionId;
+    final String myNodeId;
 
     private final ScheduledExecutorService healthCheckES;
 
@@ -43,26 +51,95 @@ class ConsulCluster implements Cluster {
         consul = Consul.builder()
                 .withHostAndPort(HostAndPort.fromParts("localhost", 8500))
                 .build();
+        consulSessionId = createConsulSession();
         myNodeId = findMyNodeId();
         healthCheckES = registerMyself(myServicePort);
 
 //        List<ServiceHealth> nodes = consul.healthClient().getHealthyServiceInstances(serviceName).getResponse();
     }
 
-    private String findMyNodeId() {
-        KeyValueClient kvClient = consul.keyValueClient();
-        String nodeId;
-        long modifyIndex;
-        do {
-            Optional<Value> valueOpt = kvClient.getValue(NODE_ID_KEY);
-            modifyIndex = valueOpt.isPresent() ? valueOpt.get().getModifyIndex() : 0L;
-            nodeId = valueOpt.isPresent() ? valueOpt.get().getValueAsString().get() : "0";
-        } while (!kvClient.putValue(NODE_ID_KEY, "", 0L, ImmutablePutOptions.builder().cas(modifyIndex).build()));
-        return nodeId;
+    private String createConsulSession() {
+        Session session = ImmutableSession.builder()
+                .name("session-" + UUID.randomUUID().toString())
+                .behavior("delete")
+                .lockDelay("1s")
+                .ttl(CONSUL_TIMEOUT_SECS + "s")
+                .build();
+        return consul.sessionClient().createSession(session).getId();
     }
 
+    // this method tries to uniquely allocate a node id of type short
+    // it does so by:
+    // - querying all existing node ids
+    // - sorting them
+    // - finding the first gap in the sorted line of ids and take it
+    // --- if there's no gaps, add one at the end
+    // - then try to exclusively lock that key with the calculated id
+    // - if I could get the lock, take it and be done
+    // --- if not, loop all over again and calculate a new node id until I succeed
+    private String findMyNodeId() {
+        KeyValueClient kvClient = consul.keyValueClient();
+        int counter = 0;
+        String myTentativeNodeId;
+        do {
+            List<String> takenKeys;
+            try {
+                takenKeys = kvClient.getKeys(NODE_ID_KEY_PREFIX);
+            } catch (ConsulException xcp) {
+                if (xcp.getCode() == 404) {
+                    try {
+                        Thread.sleep(counter * 500);
+                        counter++;
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                    takenKeys = Collections.emptyList();
+                } else {
+                    logger.error("", xcp);
+                    throw new RuntimeException(xcp);
+                }
+            }
+            myTentativeNodeId = calcNextNodeId(takenKeys);
+        } while (!kvClient.acquireLock(NODE_ID_KEY_PREFIX + myTentativeNodeId, consulSessionId));
+        kvClient.putValue(NODE_ID_KEY_PREFIX + myTentativeNodeId, myTentativeNodeId);
+        return myTentativeNodeId;
+    }
+
+    // this method calculates the next node id in a list of all existing node ids
+    private String calcNextNodeId(List<String> takenKeys) {
+        if (takenKeys.isEmpty()) {
+            return String.valueOf(MIN_NODE_ID);
+        }
+
+        Collections.sort(takenKeys);
+        takenKeys = takenKeys.stream().map(key -> key.substring(NODE_ID_KEY_PREFIX.length())).collect(Collectors.toList());
+
+        if (Integer.valueOf(takenKeys.get(0)) != MIN_NODE_ID) {
+            return String.valueOf(MIN_NODE_ID);
+        }
+
+        if (takenKeys.size() < 2 || Integer.valueOf(takenKeys.get(1)) != MIN_NODE_ID + 1) {
+            return String.valueOf(MIN_NODE_ID + 1);
+        }
+
+        for (int i = 1; i < takenKeys.size(); i++) {
+            int lastId = Integer.valueOf(takenKeys.get(i - 1));
+            int currentId = Integer.valueOf(takenKeys.get(i));
+            if (lastId + 1 != currentId) {
+                return String.valueOf((short) (lastId + 1));
+            }
+        }
+
+        if (takenKeys.size() > Short.MAX_VALUE) {
+            throw new RuntimeException("No more node ids to allocate");
+        } else {
+            return String.valueOf(MIN_NODE_ID + takenKeys.size());
+        }
+    }
+
+    // register two scheduled jobs that keep refreshing the session and the service health check
     private ScheduledExecutorService registerMyself(int myServicePort) {
-        consul.agentClient().register(myServicePort, CONSUL_TIMEOUT, serviceName, myNodeId);
+        consul.agentClient().register(myServicePort, CONSUL_TIMEOUT_SECS, serviceName, myNodeId);
         ScheduledExecutorService es = Executors.newScheduledThreadPool(1);
         es.scheduleAtFixedRate(
                 () -> {
@@ -73,11 +150,23 @@ class ConsulCluster implements Cluster {
                     }
                 },
                 0L,
-                CONSUL_TIMEOUT / 2,
+                CONSUL_TIMEOUT_SECS / 2,
+                TimeUnit.SECONDS
+        );
+
+        es.scheduleAtFixedRate(
+                () -> consul.sessionClient().renewSession(consulSessionId),
+                0L,
+                CONSUL_TIMEOUT_SECS / 2,
                 TimeUnit.SECONDS
         );
 
         return es;
+    }
+
+    @Override
+    public String toString() {
+        return "sessionId: " + consulSessionId + " myNodeId: " + myNodeId;
     }
 
     @Override
@@ -86,9 +175,13 @@ class ConsulCluster implements Cluster {
             consul.agentClient().deregister(myNodeId);
         } finally {
             try {
-                healthCheckES.shutdown();
+                consul.sessionClient().destroySession(consulSessionId);
             } finally {
-                consul.destroy();
+                try {
+                    healthCheckES.shutdown();
+                } finally {
+                    consul.destroy();
+                }
             }
         }
     }

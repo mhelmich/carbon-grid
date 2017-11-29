@@ -18,9 +18,28 @@ package org.carbon.grid.cluster;
 
 import org.junit.Test;
 
+import java.io.IOException;
+
+import static org.junit.Assert.assertEquals;
+
 public class ConsulClusterTest {
     @Test
-    public void testBasic() {
-        ConsulCluster cluster = new ConsulCluster(9999);
+    public void testBasic() throws IOException {
+        try (ConsulCluster cluster = new ConsulCluster(9999)) {
+            assertEquals(String.valueOf(ConsulCluster.MIN_NODE_ID), cluster.myNodeId);
+        }
+    }
+
+    @Test
+    public void testBasicMultipleClusters() throws IOException {
+        try (ConsulCluster cluster123 = new ConsulCluster(7777)) {
+            try (ConsulCluster cluster456 = new ConsulCluster(8888)) {
+                try (ConsulCluster cluster789 = new ConsulCluster(9999)) {
+                    assertEquals(String.valueOf(ConsulCluster.MIN_NODE_ID), cluster123.myNodeId);
+                    assertEquals(String.valueOf(ConsulCluster.MIN_NODE_ID + 1), cluster456.myNodeId);
+                    assertEquals(String.valueOf(ConsulCluster.MIN_NODE_ID + 2), cluster789.myNodeId);
+                }
+            }
+        }
     }
 }
