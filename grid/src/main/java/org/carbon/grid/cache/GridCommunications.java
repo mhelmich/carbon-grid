@@ -87,7 +87,7 @@ class GridCommunications implements Closeable {
                 throw new NullPointerException("Can't find a socket address for node with id: " + nodeId);
             } else {
                 logger.info("Creating new client {} {}", nodeId, addr);
-                return new TcpGridClient(nodeId, addr, workerGroup, internalCache);
+                return new TcpGridClient(nodeId, addr, workerGroup);
             }
         }
     };

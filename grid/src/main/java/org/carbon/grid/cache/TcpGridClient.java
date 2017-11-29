@@ -50,10 +50,10 @@ class TcpGridClient implements Closeable {
     private final ChannelFuture channelFuture;
     private Channel channel;
 
-    TcpGridClient(short theNodeITalkTo, InetSocketAddress addr, EventLoopGroup workerGroup, InternalCache internalCache) {
+    TcpGridClient(short theNodeITalkTo, InetSocketAddress addr, EventLoopGroup workerGroup) {
         this.theNodeITalkTo = theNodeITalkTo;
         this.addr = addr;
-        channelFuture = createBootstrap(workerGroup, internalCache).connect(addr);
+        channelFuture = createBootstrap(workerGroup).connect(addr);
     }
 
     ChannelFuture send(Message msg) throws IOException {
@@ -67,7 +67,7 @@ class TcpGridClient implements Closeable {
         return channel.writeAndFlush(msg);
     }
 
-    private Bootstrap createBootstrap(EventLoopGroup workerGroup, InternalCache internalCache) {
+    private Bootstrap createBootstrap(EventLoopGroup workerGroup) {
         return new Bootstrap()
                 .group(workerGroup)
                 .channel(NioSocketChannel.class)
