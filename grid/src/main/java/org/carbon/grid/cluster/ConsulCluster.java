@@ -16,6 +16,7 @@
 
 package org.carbon.grid.cluster;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Optional;
 import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
@@ -26,6 +27,7 @@ import com.orbitz.consul.model.kv.Value;
 import com.orbitz.consul.model.session.ImmutableSession;
 import com.orbitz.consul.model.session.Session;
 import com.orbitz.consul.option.ImmutablePutOptions;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +41,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
@@ -51,17 +54,17 @@ class ConsulCluster implements Cluster {
     private final static String CACHE_LINE_ID_KEY = "cache-lines/running-cache-line-id";
     private final static String serviceName = "carbon-grid";
     private final static int NUM_RETRIES = 10;
-    private final static int ID_CHUNK_SIZE = 1000;
+    private final static int ID_CHUNK_SIZE = 100;
+    final static int MIN_NODE_ID = 500;
 
     private final Consul consul;
     private final String consulSessionId;
     private final ScheduledExecutorService executorService;
-    private final LinkedBlockingQueue<Long> nextCacheLineIds = new LinkedBlockingQueue<>(ID_CHUNK_SIZE);
+    private final AtomicBoolean idAllocatorInFlight = new AtomicBoolean(false);
+    private final LinkedBlockingQueue<Long> nextCacheLineIds = new LinkedBlockingQueue<>(ID_CHUNK_SIZE * 2);
     private final AtomicLong highWaterMarkCacheLineId = new AtomicLong(0);
 
     private BiConsumer<EventType, InetSocketAddress> peerHandler;
-
-    final static int MIN_NODE_ID = 500;
 
     final String myNodeId;
 
@@ -71,7 +74,10 @@ class ConsulCluster implements Cluster {
                 .build();
         consulSessionId = createConsulSession();
         myNodeId = findMyNodeId();
-        executorService = registerMyself(myServicePort);
+        executorService = Executors.newScheduledThreadPool(2, new DefaultThreadFactory("consul-session-thread"));
+        // this method internally uses the executor service
+        // beware to create the thing before calling into register
+        registerMyself(myServicePort);
         setDefaultCacheLineIdSeed();
         fireUpIdAllocator();
 
@@ -112,8 +118,10 @@ class ConsulCluster implements Cluster {
             counter++;
             List<String> takenKeys = listKeys(kvClient, NODE_ID_KEY_PREFIX);
             myTentativeNodeId = calcNextNodeId(takenKeys);
+            logger.info("Trying to acquire node id {}", myTentativeNodeId);
         } while (!kvClient.acquireLock(NODE_ID_KEY_PREFIX + myTentativeNodeId, consulSessionId));
         kvClient.putValue(NODE_ID_KEY_PREFIX + myTentativeNodeId, myTentativeNodeId);
+        logger.info("Acquired node id {}", myTentativeNodeId);
         return myTentativeNodeId;
     }
 
@@ -139,7 +147,9 @@ class ConsulCluster implements Cluster {
     }
 
     private void setDefaultCacheLineIdSeed() {
-        consul.keyValueClient().putValue(CACHE_LINE_ID_KEY, String.valueOf(Long.MIN_VALUE), 0L, ImmutablePutOptions.builder().cas(0L).build());
+        if (!consul.keyValueClient().putValue(CACHE_LINE_ID_KEY, String.valueOf(Long.MIN_VALUE), 0L, ImmutablePutOptions.builder().cas(0L).build())) {
+            logger.warn("Cache line id seed was present already");
+        }
     }
 
     // this method calculates the next node id in a list of all existing node ids
@@ -175,10 +185,9 @@ class ConsulCluster implements Cluster {
     }
 
     // register two scheduled jobs that keep refreshing the session and the service health check
-    private ScheduledExecutorService registerMyself(int myServicePort) {
+    private void registerMyself(int myServicePort) {
         consul.agentClient().register(myServicePort, CONSUL_TIMEOUT_SECS, serviceName, myNodeId);
-        ScheduledExecutorService es = Executors.newScheduledThreadPool(1);
-        es.scheduleAtFixedRate(
+        executorService.scheduleAtFixedRate(
                 () -> {
                     try {
                         consul.agentClient().pass(myNodeId);
@@ -191,18 +200,17 @@ class ConsulCluster implements Cluster {
                 TimeUnit.SECONDS
         );
 
-        es.scheduleAtFixedRate(
+        executorService.scheduleAtFixedRate(
                 () -> consul.sessionClient().renewSession(consulSessionId),
                 0L,
                 CONSUL_TIMEOUT_SECS / 2,
                 TimeUnit.SECONDS
         );
-
-        return es;
     }
 
+    @VisibleForTesting
     Pair<Long, Long> allocateIds(int numIdsToAllocate) {
-        Long currentlyHighestCacheLineId = 0L;
+        Long currentlyHighestCacheLineId = null;
         Long modifyIndex = 0L;
 
         do {
@@ -214,25 +222,50 @@ class ConsulCluster implements Cluster {
                     currentlyHighestCacheLineId = Long.valueOf(vOpt.get());
                 }
             }
+            if (currentlyHighestCacheLineId == null) throw new IllegalStateException("Can't allocate new cache line ids");
             if (currentlyHighestCacheLineId + numIdsToAllocate > Long.MAX_VALUE) throw new IllegalStateException("Can't allocate cache line id " + (currentlyHighestCacheLineId + numIdsToAllocate));
-            if (currentlyHighestCacheLineId == 0) throw new IllegalStateException("Can't allocate new cache line ids");
+            logger.info("Trying to allocate chunk {} - {}", currentlyHighestCacheLineId, currentlyHighestCacheLineId + numIdsToAllocate);
         } while (!consul.keyValueClient().putValue(CACHE_LINE_ID_KEY, String.valueOf(currentlyHighestCacheLineId + numIdsToAllocate), 0L, ImmutablePutOptions.builder().cas(modifyIndex).build()));
         return Pair.of(currentlyHighestCacheLineId - numIdsToAllocate, currentlyHighestCacheLineId);
     }
 
     private void fireUpIdAllocator() {
-        executorService.submit(() -> {
-            Pair<Long, Long> idChunk = allocateIds(ID_CHUNK_SIZE);
-            highWaterMarkCacheLineId.set(idChunk.getRight());
-            for (long i = idChunk.getLeft(); i < idChunk.getRight(); i++) {
-                nextCacheLineIds.offer(i);
+        if (!idAllocatorInFlight.get()) {
+            synchronized (idAllocatorInFlight) {
+                if (!idAllocatorInFlight.get()) {
+                    if (!idAllocatorInFlight.compareAndSet(false, true)) {
+                        logger.warn("idAllocatorInFlight was set to {} -- that's weird I'm overriding it to true anyway to proceed", idAllocatorInFlight.get());
+                        idAllocatorInFlight.set(true);
+                    }
+
+                    executorService.submit(() -> {
+                        long before = System.currentTimeMillis();
+                        int numIdsToAllocate = Math.min(nextCacheLineIds.remainingCapacity(), ID_CHUNK_SIZE);
+                        Pair<Long, Long> idChunk = allocateIds(numIdsToAllocate);
+                        highWaterMarkCacheLineId.set(idChunk.getRight());
+                        for (long i = idChunk.getLeft(); i < idChunk.getRight(); i++) {
+                            nextCacheLineIds.offer(i);
+                        }
+                        logger.info("Reserved {} new ids in {} ms", numIdsToAllocate, System.currentTimeMillis() - before);
+                        if (!idAllocatorInFlight.compareAndSet(true, false)) {
+                            logger.warn("idAllocatorInFlight was set to {} -- that's weird I'm overriding it to false anyway to proceed", idAllocatorInFlight.get());
+                            idAllocatorInFlight.set(false);
+                        }
+                    });
+                }
             }
-        });
+        }
     }
 
-    Supplier<Long> getIdSupplier() {
+    @Override
+    public Supplier<Long> getIdSupplier() {
         return () -> {
-            Long id = nextCacheLineIds.poll();
+            Long id;
+            try {
+                id = nextCacheLineIds.poll(1, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                throw new RuntimeException("Can't allocate new cache line ids", e);
+            }
             if (highWaterMarkCacheLineId.get() - id < 50) {
                 fireUpIdAllocator();
             }

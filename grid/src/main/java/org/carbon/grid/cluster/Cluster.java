@@ -17,10 +17,13 @@
 package org.carbon.grid.cluster;
 
 import java.io.Closeable;
+import java.util.function.Supplier;
 
 public interface Cluster extends Closeable {
     enum EventType {
         ADD,
         REMOVE,
     }
+
+    Supplier<Long> getIdSupplier();
 }

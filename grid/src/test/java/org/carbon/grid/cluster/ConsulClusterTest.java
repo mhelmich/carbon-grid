@@ -18,7 +18,7 @@ package org.carbon.grid.cluster;
 
 import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
-import org.junit.Ignore;
+import org.apache.commons.lang3.tuple.Pair;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -28,8 +28,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -116,10 +118,12 @@ public class ConsulClusterTest {
     }
 
     @Test
-    @Ignore
     public void testAllocateIds() throws IOException {
         try (ConsulCluster cluster123 = new ConsulCluster(7777)) {
-
+            Pair<Long, Long> chunk = cluster123.allocateIds(1);
+            assertEquals(chunk.getLeft() + 1L, chunk.getRight().longValue());
+            Supplier<Long> idSupplier = cluster123.getIdSupplier();
+            assertNotNull(idSupplier.get());
         }
     }
 }
