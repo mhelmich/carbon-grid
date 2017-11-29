@@ -64,32 +64,31 @@ class ConsulCluster implements Cluster {
 
     private final Consul consul;
     private final String consulSessionId;
+    // this executor service will be shared with the consul client for callbacks
+    // and it's running the regular health checks and session touches
     private final ScheduledExecutorService executorService;
     private final AtomicBoolean idAllocatorInFlight = new AtomicBoolean(false);
+    // this holds a list of all ids that have been reserved on this
     private final LinkedBlockingQueue<Long> nextCacheLineIds = new LinkedBlockingQueue<>(ID_CHUNK_SIZE * 2);
     private final AtomicLong highWaterMarkCacheLineId = new AtomicLong(0);
-
-    private final BiConsumer<Short, InetSocketAddress> peerHandler;
+    private final ServiceHealthCache shCache;
 
     final String myNodeId;
 
-    ConsulCluster(int myServicePort, BiConsumer<Short, InetSocketAddress> peerHandler) {
-        this.peerHandler = peerHandler;
-        consul = Consul.builder()
+    ConsulCluster(int myServicePort, BiConsumer<Short, InetSocketAddress> peerChangeConsumer) {
+        this.executorService = Executors.newScheduledThreadPool(3, new DefaultThreadFactory("consul-session-group"));
+        this.consul = Consul.builder()
                 .withHostAndPort(HostAndPort.fromParts("localhost", 8500))
+                .withExecutorService(executorService)
                 .build();
-        consulSessionId = createConsulSession();
-        myNodeId = findMyNodeId();
-        executorService = Executors.newScheduledThreadPool(2, new DefaultThreadFactory("consul-session-thread"));
+        this.consulSessionId = createConsulSession();
+        this.myNodeId = findMyNodeId();
         // this method internally uses the executor service
         // beware to create the thing before calling into register
         registerMyself(myServicePort);
         setDefaultCacheLineIdSeed();
         fireUpIdAllocator();
-
-        // TODO -- add other peers at startup
-        // TODO -- register callback in case node availability changes
-        //List<ServiceHealth> nodes = consul.healthClient().getHealthyServiceInstances(serviceName).getResponse();
+        this.shCache = attachToChanges(peerChangeConsumer);
     }
 
     private String createConsulSession() {
@@ -279,6 +278,7 @@ class ConsulCluster implements Cluster {
         };
     }
 
+    // this method just returns the current state (as far as nodes and their health goes) from consul
     Map<Short, InetSocketAddress> getHealthyNodes() {
         List<ServiceHealth> nodes = consul.healthClient().getHealthyServiceInstances(serviceName).getResponse();
         Map<Short, InetSocketAddress> nodesToAddr = nodes.stream()
@@ -290,18 +290,25 @@ class ConsulCluster implements Cluster {
         return ImmutableMap.copyOf(nodesToAddr);
     }
 
-    void attachToChanges() {
+    // this method registers a callback with consul
+    // every time the health of a node changes, consul sends back the entire state (!!!)
+    // that means two things:
+    // a) the peerChangeConsumer needs to be really fast
+    // b) the peerChangeConsumer needs to dedup existing nodes from new nodes (by putting the into a map or something)
+    private ServiceHealthCache attachToChanges(BiConsumer<Short, InetSocketAddress> peerChangeConsumer) {
         ServiceHealthCache shCache = ServiceHealthCache.newCache(consul.healthClient(), serviceName);
         shCache.addListener(hostsAndHealth -> hostsAndHealth.keySet().forEach(key -> {
             short nodeId = Short.valueOf(key.getServiceId());
             InetSocketAddress addr = SocketUtils.socketAddress(key.getHost(), key.getPort());
-            peerHandler.accept(nodeId, addr);
+            peerChangeConsumer.accept(nodeId, addr);
         }));
         try {
             shCache.start();
         } catch (Exception xcp) {
             throw new RuntimeException(xcp);
         }
+
+        return shCache;
     }
 
     @Override
@@ -312,15 +319,21 @@ class ConsulCluster implements Cluster {
     @Override
     public void close() throws IOException {
         try {
-            consul.agentClient().deregister(myNodeId);
+            shCache.stop();
+        } catch (Exception xcp) {
+            logger.warn("Error during shutdown ... but at this point I don't really care anymore", xcp);
         } finally {
             try {
-                consul.sessionClient().destroySession(consulSessionId);
+                consul.agentClient().deregister(myNodeId);
             } finally {
                 try {
-                    executorService.shutdown();
+                    consul.sessionClient().destroySession(consulSessionId);
                 } finally {
-                    consul.destroy();
+                    try {
+                        executorService.shutdown();
+                    } finally {
+                        consul.destroy();
+                    }
                 }
             }
         }

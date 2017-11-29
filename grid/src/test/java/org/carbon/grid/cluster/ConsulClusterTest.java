@@ -174,7 +174,6 @@ public class ConsulClusterTest {
                 addedSecondBatch.countDown();
             })) {
                 assertEquals(2, cluster123.getHealthyNodes().size());
-                cluster456.attachToChanges();
                 assertTrue(addedFirstBatch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
                 assertEquals(2, nodeIdToAddr.size());
                 assertEquals(2, count.get());
