@@ -18,16 +18,20 @@ package org.carbon.grid.cluster;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Optional;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
 import com.orbitz.consul.ConsulException;
 import com.orbitz.consul.KeyValueClient;
 import com.orbitz.consul.NotRegisteredException;
+import com.orbitz.consul.cache.ServiceHealthCache;
+import com.orbitz.consul.model.health.ServiceHealth;
 import com.orbitz.consul.model.kv.Value;
 import com.orbitz.consul.model.session.ImmutableSession;
 import com.orbitz.consul.model.session.Session;
 import com.orbitz.consul.option.ImmutablePutOptions;
 import io.netty.util.concurrent.DefaultThreadFactory;
+import io.netty.util.internal.SocketUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,6 +40,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -64,11 +69,12 @@ class ConsulCluster implements Cluster {
     private final LinkedBlockingQueue<Long> nextCacheLineIds = new LinkedBlockingQueue<>(ID_CHUNK_SIZE * 2);
     private final AtomicLong highWaterMarkCacheLineId = new AtomicLong(0);
 
-    private BiConsumer<EventType, InetSocketAddress> peerHandler;
+    private final BiConsumer<Short, InetSocketAddress> peerHandler;
 
     final String myNodeId;
 
-    ConsulCluster(int myServicePort) {
+    ConsulCluster(int myServicePort, BiConsumer<Short, InetSocketAddress> peerHandler) {
+        this.peerHandler = peerHandler;
         consul = Consul.builder()
                 .withHostAndPort(HostAndPort.fromParts("localhost", 8500))
                 .build();
@@ -271,6 +277,31 @@ class ConsulCluster implements Cluster {
             }
             return id;
         };
+    }
+
+    Map<Short, InetSocketAddress> getHealthyNodes() {
+        List<ServiceHealth> nodes = consul.healthClient().getHealthyServiceInstances(serviceName).getResponse();
+        Map<Short, InetSocketAddress> nodesToAddr = nodes.stream()
+                .map(ServiceHealth::getService)
+                .collect(Collectors.toMap(
+                    s -> Short.valueOf(s.getId()),
+                    s -> SocketUtils.socketAddress(s.getAddress(), s.getPort())
+                ));
+        return ImmutableMap.copyOf(nodesToAddr);
+    }
+
+    void attachToChanges() {
+        ServiceHealthCache shCache = ServiceHealthCache.newCache(consul.healthClient(), serviceName);
+        shCache.addListener(hostsAndHealth -> hostsAndHealth.keySet().forEach(key -> {
+            short nodeId = Short.valueOf(key.getServiceId());
+            InetSocketAddress addr = SocketUtils.socketAddress(key.getHost(), key.getPort());
+            peerHandler.accept(nodeId, addr);
+        }));
+        try {
+            shCache.start();
+        } catch (Exception xcp) {
+            throw new RuntimeException(xcp);
+        }
     }
 
     @Override

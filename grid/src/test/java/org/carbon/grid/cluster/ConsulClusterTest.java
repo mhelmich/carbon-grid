@@ -22,14 +22,19 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 
 import static org.junit.Assert.assertEquals;
@@ -39,9 +44,11 @@ import static org.junit.Assert.fail;
 
 public class ConsulClusterTest {
     private final static int TIMEOUT_SECS = 555;
+    private final BiConsumer<Short, InetSocketAddress> emptyPeerHandler = (id, addr) -> {};
+
     @Test
     public void testRegister() throws IOException {
-        try (ConsulCluster cluster = new ConsulCluster(9999)) {
+        try (ConsulCluster cluster = new ConsulCluster(9999, emptyPeerHandler)) {
             assertEquals(String.valueOf(ConsulCluster.MIN_NODE_ID), cluster.myNodeId);
         }
     }
@@ -53,9 +60,9 @@ public class ConsulClusterTest {
             add(String.valueOf(ConsulCluster.MIN_NODE_ID + 1));
             add(String.valueOf(ConsulCluster.MIN_NODE_ID + 2));
         }};
-        try (ConsulCluster cluster123 = new ConsulCluster(7777)) {
-            try (ConsulCluster cluster456 = new ConsulCluster(8888)) {
-                try (ConsulCluster cluster789 = new ConsulCluster(9999)) {
+        try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler)) {
+            try (ConsulCluster cluster456 = new ConsulCluster(8888, emptyPeerHandler)) {
+                try (ConsulCluster cluster789 = new ConsulCluster(9999, emptyPeerHandler)) {
                     assertTrue(nodeIds.remove(cluster123.myNodeId));
                     assertTrue(nodeIds.remove(cluster456.myNodeId));
                     assertTrue(nodeIds.remove(cluster789.myNodeId));
@@ -86,7 +93,7 @@ public class ConsulClusterTest {
         try {
             es.submit(
                     () -> {
-                        try (ConsulCluster cluster123 = new ConsulCluster(7777) {
+                        try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler) {
                             @Override
                             protected String calcNextNodeId(List<String> takenKeys) {
                                 String nodeId = super.calcNextNodeId(takenKeys);
@@ -107,7 +114,7 @@ public class ConsulClusterTest {
 
             es.submit(
                     () -> {
-                        try (ConsulCluster cluster456 = new ConsulCluster(8888) {
+                        try (ConsulCluster cluster456 = new ConsulCluster(8888, emptyPeerHandler) {
                             @Override
                             protected String findMyNodeId() {
                                 String s = super.findMyNodeId();
@@ -129,11 +136,56 @@ public class ConsulClusterTest {
 
     @Test
     public void testAllocateIds() throws IOException {
-        try (ConsulCluster cluster123 = new ConsulCluster(7777)) {
+        try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler)) {
             Pair<Long, Long> chunk = cluster123.allocateIds(1);
             assertEquals(chunk.getLeft() + 1L, chunk.getRight().longValue());
             Supplier<Long> idSupplier = cluster123.getIdSupplier();
             assertNotNull(idSupplier.get());
+        }
+    }
+
+    @Test
+    public void testGetHealthyNodes() throws IOException {
+        try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler)) {
+            try (ConsulCluster cluster456 = new ConsulCluster(8888, emptyPeerHandler)) {
+                try (ConsulCluster cluster789 = new ConsulCluster(9999, emptyPeerHandler)) {
+                    Map<Short, InetSocketAddress> nodesToAddr = cluster123.getHealthyNodes();
+                    assertEquals(3, nodesToAddr.size());
+                    assertTrue(nodesToAddr.containsKey(Short.valueOf(cluster123.myNodeId)));
+                    assertTrue(nodesToAddr.containsKey(Short.valueOf(cluster456.myNodeId)));
+                    assertTrue(nodesToAddr.containsKey(Short.valueOf(cluster789.myNodeId)));
+                }
+            }
+        }
+    }
+
+    @Test
+    public void testNodeHealthListener() throws IOException, InterruptedException {
+        Map<Short, InetSocketAddress> nodeIdToAddr = new HashMap<>();
+        AtomicInteger count = new AtomicInteger(0);
+        CountDownLatch addedFirstBatch = new CountDownLatch(2);
+        CountDownLatch addedSecondBatch = new CountDownLatch(5);
+
+        try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler)) {
+            try (ConsulCluster cluster456 = new ConsulCluster(8888, (nodeId, addr) -> {
+                nodeIdToAddr.put(nodeId, addr);
+                count.incrementAndGet();
+                addedFirstBatch.countDown();
+                addedSecondBatch.countDown();
+            })) {
+                assertEquals(2, cluster123.getHealthyNodes().size());
+                cluster456.attachToChanges();
+                assertTrue(addedFirstBatch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
+                assertEquals(2, nodeIdToAddr.size());
+                assertEquals(2, count.get());
+                try (ConsulCluster cluster789 = new ConsulCluster(9999, emptyPeerHandler)) {
+                    assertEquals(3, cluster789.getHealthyNodes().size());
+                    assertEquals(3, cluster123.getHealthyNodes().size());
+                    assertTrue(addedSecondBatch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
+                    assertEquals(3, nodeIdToAddr.size());
+                    assertEquals(2 + 3, count.get());
+                }
+            }
         }
     }
 }
