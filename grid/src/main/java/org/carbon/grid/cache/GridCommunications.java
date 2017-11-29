@@ -27,6 +27,7 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.util.concurrent.Future;
 import io.netty.util.internal.SocketUtils;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
@@ -46,6 +47,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -84,6 +86,7 @@ class GridCommunications implements Closeable {
                 logger.error("I can't find a socket address for node with id: " + nodeId);
                 throw new NullPointerException("Can't find a socket address for node with id: " + nodeId);
             } else {
+                logger.info("Creating new client {} {}", nodeId, addr);
                 return new TcpGridClient(nodeId, addr, workerGroup, internalCache);
             }
         }
@@ -412,12 +415,19 @@ class GridCommunications implements Closeable {
 
     @Override
     public void close() throws IOException {
+        logger.info("Shutting down {}", this);
         nodeIdToClient.invalidateAll();
         closeQuietly(tcpGridServer);
-        workerGroup.shutdownGracefully();
-        bossGroup.shutdownGracefully();
+        Future<?> workerShutdownFuture = workerGroup.shutdownGracefully();
+        Future<?> bossShutdownFuture = bossGroup.shutdownGracefully();
         messageIdToLatchAndMessage.clear();
         cacheLineIdToBacklog.clear();
+        try {
+            workerShutdownFuture.get(1, TimeUnit.MINUTES);
+            bossShutdownFuture.get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
+            throw new IOException(xcp);
+        }
     }
 
     @Override

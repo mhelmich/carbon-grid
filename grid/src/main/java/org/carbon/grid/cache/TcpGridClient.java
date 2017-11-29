@@ -27,10 +27,15 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.MessageToByteEncoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Due to fairly special ordering guarantees, a client never actually receives data.
@@ -39,6 +44,7 @@ import java.net.InetSocketAddress;
  * A client is practically a write-only construct.
  */
 class TcpGridClient implements Closeable {
+    private final static Logger logger = LoggerFactory.getLogger(TcpGridClient.class);
     private final short theNodeITalkTo;
     private final InetSocketAddress addr;
     private final ChannelFuture channelFuture;
@@ -80,7 +86,13 @@ class TcpGridClient implements Closeable {
 
     @Override
     public void close() throws IOException {
-        channelFuture.channel().close();
+        ChannelFuture f = channelFuture.channel().close();
+        logger.info("Shutting down client {}", this);
+        try {
+            f.get(5, TimeUnit.SECONDS);
+        } catch (InterruptedException | TimeoutException | ExecutionException xcp) {
+            throw new IOException(xcp);
+        }
     }
 
     @Override
