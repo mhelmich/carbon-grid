@@ -131,7 +131,7 @@ class GridCommunications implements Closeable {
         this.internalCache = internalCache;
     }
 
-    private void addPeer(short nodeId, InetSocketAddress addr) {
+    void addPeer(short nodeId, InetSocketAddress addr) {
         logger.info("adding peer {} {}", nodeId, addr);
         nodeIdToSocketAddress.put(nodeId, addr);
     }
