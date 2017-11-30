@@ -16,15 +16,109 @@
 
 package org.carbon.grid;
 
+import com.google.inject.AbstractModule;
+import com.google.inject.Injector;
 import org.carbon.grid.cache.Cache;
 import org.carbon.grid.cluster.Cluster;
+import org.cfg4j.provider.ConfigurationProvider;
+import org.cfg4j.provider.ConfigurationProviderBuilder;
+import org.cfg4j.source.ConfigurationSource;
+import org.cfg4j.source.classpath.ClasspathConfigurationSource;
+import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
-public class CarbonGrid {
+import java.io.Closeable;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+public final class CarbonGrid implements Closeable {
+    private static final NonBlockingHashMap<Integer, CarbonGrid> hashToGrid = new NonBlockingHashMap<>();
+
+    public static CarbonGrid start() {
+        ConfigurationSource cs = new ClasspathConfigurationSource(
+                () -> Paths.get("carbon-grid.yaml")
+        );
+
+        return innerStart(cs);
+    }
+
+    public static CarbonGrid start(Path configFile) {
+        ConfigurationSource cs = new ClasspathConfigurationSource(() -> configFile);
+        return innerStart(cs);
+    }
+
+    public static CarbonGrid start(File configFile) {
+        return start(configFile.toPath());
+    }
+
+    static CarbonGrid innerStart(ConfigurationSource cs) {
+        ConfigurationProvider configProvider = new ConfigurationProviderBuilder()
+                .withConfigurationSource(cs)
+                .build();
+
+        CarbonGrid grid = hashToGrid.putIfAbsent(cs.hashCode(), new CarbonGrid(configProvider));
+        return grid == null ? hashToGrid.get(cs.hashCode()) : grid;
+    }
+
+    private final ConfigurationProvider configProvider;
+    private Injector injector;
+    private Cache cache;
+    private Cluster cluster;
+
+    private CarbonGrid(ConfigurationProvider configProvider) {
+        this.configProvider = configProvider;
+        createInjector(configProvider);
+    }
+
+    private void createInjector(ConfigurationProvider configProvider) {
+//        injector = Guice.createInjector(
+//                new ConfigModule(configProvider),
+//                new ClusterModule(),
+//                new CacheModule()
+//        );
+//
+//        cluster = injector.getInstance(Cluster.class);
+//        cache = injector.getInstance(Cache.class);
+    }
+
+    public void shutdownGracefully() throws IOException {
+        getCluster().close();
+        getCache().close();
+    }
+
     public Cache getCache() {
-        return null;
+        return cache;
     }
 
     public Cluster getCluster() {
-        return null;
+        return cluster;
+    }
+
+    public boolean isUp() {
+        return true;
+    }
+
+    @Override
+    public void close() throws IOException {
+        shutdownGracefully();
+    }
+
+    static class ConfigModule extends AbstractModule {
+        private final ConfigurationProvider configProvider;
+
+        ConfigModule(ConfigurationProvider configProvider) {
+            this.configProvider = configProvider;
+        }
+
+        @Override
+        protected void configure() {
+            CarbonGridServerConfig serverConfig = configProvider.bind("server", CarbonGridServerConfig.class);
+            bind(CarbonGridServerConfig.class).toInstance(serverConfig);
+        }
+    }
+
+    public interface CarbonGridServerConfig {
+        Integer port();
     }
 }
