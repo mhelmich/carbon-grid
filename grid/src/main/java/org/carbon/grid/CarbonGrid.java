@@ -17,9 +17,12 @@
 package org.carbon.grid;
 
 import com.google.inject.AbstractModule;
+import com.google.inject.Guice;
 import com.google.inject.Injector;
 import org.carbon.grid.cache.Cache;
+import org.carbon.grid.cache.CacheModule;
 import org.carbon.grid.cluster.Cluster;
+import org.carbon.grid.cluster.ClusterModule;
 import org.cfg4j.provider.ConfigurationProvider;
 import org.cfg4j.provider.ConfigurationProviderBuilder;
 import org.cfg4j.source.ConfigurationSource;
@@ -72,12 +75,12 @@ public final class CarbonGrid implements Closeable {
     }
 
     private void createInjector(ConfigurationProvider configProvider) {
-//        injector = Guice.createInjector(
-//                new ConfigModule(configProvider),
-//                new ClusterModule(),
-//                new CacheModule()
-//        );
-//
+        injector = Guice.createInjector(
+                new ConfigModule(configProvider),
+                new ClusterModule(),
+                new CacheModule()
+        );
+
 //        cluster = injector.getInstance(Cluster.class);
 //        cache = injector.getInstance(Cache.class);
     }
