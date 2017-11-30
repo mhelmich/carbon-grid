@@ -1,0 +1,3 @@
+# test config
+server:
+    port: 4567
