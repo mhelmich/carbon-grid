@@ -81,13 +81,13 @@ public final class CarbonGrid implements Closeable {
                 new CacheModule()
         );
 
-//        cluster = injector.getInstance(Cluster.class);
+        cluster = injector.getInstance(Cluster.class);
 //        cache = injector.getInstance(Cache.class);
     }
 
     public void shutdownGracefully() throws IOException {
         getCluster().close();
-        getCache().close();
+//        getCache().close();
     }
 
     public Cache getCache() {
@@ -116,12 +116,17 @@ public final class CarbonGrid implements Closeable {
 
         @Override
         protected void configure() {
-            CarbonGridServerConfig serverConfig = configProvider.bind("server", CarbonGridServerConfig.class);
-            bind(CarbonGridServerConfig.class).toInstance(serverConfig);
+            bind(CarbonGridServerConfig.class).toInstance(configProvider.bind("server", CarbonGridServerConfig.class));
+            bind(CarbonGridConsulConfig.class).toInstance(configProvider.bind("consul", CarbonGridConsulConfig.class));
         }
     }
 
     public interface CarbonGridServerConfig {
+        Integer port();
+    }
+
+    public interface CarbonGridConsulConfig {
+        String host();
         Integer port();
     }
 }
