@@ -19,7 +19,9 @@ package org.carbon.grid.cluster;
 import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
 import org.apache.commons.lang3.tuple.Pair;
+import org.carbon.grid.CarbonGrid;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -40,6 +42,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.Mockito.when;
 
 public class ConsulClusterTest {
     private final static int TIMEOUT_SECS = 555;
@@ -47,7 +50,7 @@ public class ConsulClusterTest {
 
     @Test
     public void testRegister() throws IOException {
-        try (ConsulCluster cluster = new ConsulCluster(9999, emptyPeerHandler)) {
+        try (ConsulCluster cluster = mockConsulCluster(9999, emptyPeerHandler)) {
             assertEquals(ConsulCluster.MIN_NODE_ID, cluster.myNodeId());
         }
     }
@@ -59,9 +62,9 @@ public class ConsulClusterTest {
             add((short) (ConsulCluster.MIN_NODE_ID + 1));
             add((short) (ConsulCluster.MIN_NODE_ID + 2));
         }};
-        try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler)) {
-            try (ConsulCluster cluster456 = new ConsulCluster(8888, emptyPeerHandler)) {
-                try (ConsulCluster cluster789 = new ConsulCluster(9999, emptyPeerHandler)) {
+        try (ConsulCluster cluster123 = mockConsulCluster(7777, emptyPeerHandler)) {
+            try (ConsulCluster cluster456 = mockConsulCluster(8888, emptyPeerHandler)) {
+                try (ConsulCluster cluster789 = mockConsulCluster(9999, emptyPeerHandler)) {
                     assertTrue(nodeIds.remove(cluster123.myNodeId()));
                     assertTrue(nodeIds.remove(cluster456.myNodeId()));
                     assertTrue(nodeIds.remove(cluster789.myNodeId()));
@@ -92,7 +95,7 @@ public class ConsulClusterTest {
         try {
             es.submit(
                     () -> {
-                        try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler) {
+                        try (ConsulCluster cluster123 = new ConsulCluster(mockServerConfig(7777), mockConsulConfig(), emptyPeerHandler) {
                             @Override
                             protected String calcNextNodeId(List<String> takenKeys) {
                                 String nodeId = super.calcNextNodeId(takenKeys);
@@ -113,7 +116,7 @@ public class ConsulClusterTest {
 
             es.submit(
                     () -> {
-                        try (ConsulCluster cluster456 = new ConsulCluster(8888, emptyPeerHandler) {
+                        try (ConsulCluster cluster456 = new ConsulCluster(mockServerConfig(8888), mockConsulConfig(), emptyPeerHandler) {
                             @Override
                             protected String findMyNodeId() {
                                 String s = super.findMyNodeId();
@@ -135,7 +138,7 @@ public class ConsulClusterTest {
 
     @Test
     public void testAllocateIds() throws IOException {
-        try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler)) {
+        try (ConsulCluster cluster123 = mockConsulCluster(7777, emptyPeerHandler)) {
             Pair<Long, Long> chunk = cluster123.allocateIds(1);
             assertEquals(chunk.getLeft() + 1L, chunk.getRight().longValue());
             GloballyUniqueIdAllocator idSupplier = cluster123.getIdAllocator();
@@ -145,9 +148,9 @@ public class ConsulClusterTest {
 
     @Test
     public void testGetHealthyNodes() throws IOException, InterruptedException {
-        try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler)) {
-            try (ConsulCluster cluster456 = new ConsulCluster(8888, emptyPeerHandler)) {
-                try (ConsulCluster cluster789 = new ConsulCluster(9999, emptyPeerHandler)) {
+        try (ConsulCluster cluster123 = mockConsulCluster(7777, emptyPeerHandler)) {
+            try (ConsulCluster cluster456 = mockConsulCluster(8888, emptyPeerHandler)) {
+                try (ConsulCluster cluster789 = mockConsulCluster(9999, emptyPeerHandler)) {
                     // TODO -- Test.flap()
                     Thread.sleep(500);
                     Map<Short, InetSocketAddress> nodesToAddr = cluster123.getHealthyNodes();
@@ -167,8 +170,8 @@ public class ConsulClusterTest {
         CountDownLatch addedFirstBatch = new CountDownLatch(2);
         CountDownLatch addedSecondBatch = new CountDownLatch(5);
 
-        try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler)) {
-            try (ConsulCluster cluster456 = new ConsulCluster(8888, (nodeId, addr) -> {
+        try (ConsulCluster cluster123 = mockConsulCluster(7777, emptyPeerHandler)) {
+            try (ConsulCluster cluster456 = mockConsulCluster(8888, (nodeId, addr) -> {
                 nodeIdToAddr.put(nodeId, addr);
                 count.incrementAndGet();
                 addedFirstBatch.countDown();
@@ -178,7 +181,7 @@ public class ConsulClusterTest {
                 assertTrue(addedFirstBatch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
                 assertEquals(2, nodeIdToAddr.size());
                 assertEquals(2, count.get());
-                try (ConsulCluster cluster789 = new ConsulCluster(9999, emptyPeerHandler)) {
+                try (ConsulCluster cluster789 = mockConsulCluster(9999, emptyPeerHandler)) {
                     // TODO -- Test.flap()
                     Thread.sleep(100);
                     assertEquals(3, cluster789.getHealthyNodes().size());
@@ -189,5 +192,24 @@ public class ConsulClusterTest {
                 }
             }
         }
+    }
+
+    private ConsulCluster mockConsulCluster(int servicePort, BiConsumer<Short, InetSocketAddress> peerChangeConsumer) {
+        return new ConsulCluster(mockServerConfig(servicePort), mockConsulConfig(), peerChangeConsumer);
+    }
+
+    private CarbonGrid.ServerConfig mockServerConfig(int port) {
+        CarbonGrid.ServerConfig sc = Mockito.mock(CarbonGrid.ServerConfig.class);
+        when(sc.port()).thenReturn(port);
+        when(sc.timeout()).thenReturn(60);
+        return sc;
+    }
+
+    private CarbonGrid.ConsulConfig mockConsulConfig() {
+        CarbonGrid.ConsulConfig sc = Mockito.mock(CarbonGrid.ConsulConfig.class);
+        when(sc.host()).thenReturn("localhost");
+        when(sc.port()).thenReturn(8500);
+        when(sc.timeout()).thenReturn(60);
+        return sc;
     }
 }

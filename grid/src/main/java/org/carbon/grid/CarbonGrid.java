@@ -100,7 +100,7 @@ public final class CarbonGrid implements Closeable {
     }
 
     public boolean isUp() {
-        return true;
+        return cluster.isUp();
     }
 
     @Override
@@ -130,5 +130,6 @@ public final class CarbonGrid implements Closeable {
     public interface ConsulConfig {
         String host();
         Integer port();
+        Integer timeout();
     }
 }

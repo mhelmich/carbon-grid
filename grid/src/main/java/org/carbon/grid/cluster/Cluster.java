@@ -19,6 +19,7 @@ package org.carbon.grid.cluster;
 import java.io.Closeable;
 
 public interface Cluster extends Closeable {
+    boolean isUp();
     short myNodeId();
     GloballyUniqueIdAllocator getIdAllocator();
 }
