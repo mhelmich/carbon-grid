@@ -178,6 +178,8 @@ public class ConsulClusterTest {
                 assertEquals(2, nodeIdToAddr.size());
                 assertEquals(2, count.get());
                 try (ConsulCluster cluster789 = new ConsulCluster(9999, emptyPeerHandler)) {
+                    // TODO -- Test.flap()
+                    Thread.sleep(100);
                     assertEquals(3, cluster789.getHealthyNodes().size());
                     assertEquals(3, cluster123.getHealthyNodes().size());
                     assertTrue(addedSecondBatch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
