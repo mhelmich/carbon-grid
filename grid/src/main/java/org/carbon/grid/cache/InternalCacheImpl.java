@@ -85,6 +85,11 @@ class InternalCacheImpl implements InternalCache {
         comms = new GridCommunications(myNodeIdProvider, serverConfig, this);
     }
 
+    @Override
+    public void handlePeerChange(short nodeId, InetSocketAddress addr) {
+        comms.addPeer(nodeId, addr);
+    }
+
     ///////////////////////////////////////
     ////////////////////////////////
     //////////////////////////
@@ -134,11 +139,6 @@ class InternalCacheImpl implements InternalCache {
             default:
                 throw new RuntimeException("Unknown type " + request.type);
         }
-    }
-
-    @Override
-    public void handlePeerChange(short nodeId, InetSocketAddress addr) {
-        comms.addPeer(nodeId, addr);
     }
 
     private void preHandler(Message msg) {
