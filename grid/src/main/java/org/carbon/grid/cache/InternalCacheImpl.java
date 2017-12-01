@@ -16,9 +16,11 @@
 
 package org.carbon.grid.cache;
 
+import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
+import org.carbon.grid.CarbonGrid;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,13 +69,14 @@ class InternalCacheImpl implements InternalCache {
     private final NonBlockingHashMapLong<CacheLine> shared = new NonBlockingHashMapLong<>();
 
     final GridCommunications comms;
-    final short myNodeId;
+    private final Provider<Short> myNodeIdProvider;
+    private short myNodeId = -1;
 
     private final static int TIMEOUT_SECS = 555;
 
-    InternalCacheImpl(int myNodeId, int myPort) {
-        this.myNodeId = (short) myNodeId;
-        comms = new GridCommunications(myNodeId, myPort, this);
+    InternalCacheImpl(Provider<Short> myNodeIdProvider, CarbonGrid.ServerConfig serverConfig) {
+        this.myNodeIdProvider = myNodeIdProvider;
+        comms = new GridCommunications(myNodeIdProvider, serverConfig, this);
     }
 
     ///////////////////////////////////////
@@ -154,12 +157,12 @@ class InternalCacheImpl implements InternalCache {
 
             // massage sharers list
             sharersToSend.remove(getx.getSender());
-            sharersToSend.remove(myNodeId);
+            sharersToSend.remove(myNodeId());
 
             // compose message
             return new Message.PUTX(
                     getx.getMessageSequenceNumber(),
-                    myNodeId,
+                    myNodeId(),
                     line.getId(),
                     line.getVersion(),
                     sharersToSend,
@@ -171,11 +174,11 @@ class InternalCacheImpl implements InternalCache {
             // in the sharer map and see who the new owner is
             line = shared.get(getx.lineId);
             if (line == null) {
-                return new Message.ACK(getx.getMessageSequenceNumber(), myNodeId, getx.lineId);
+                return new Message.ACK(getx.getMessageSequenceNumber(), myNodeId(), getx.lineId);
             } else {
                 return new Message.OWNER_CHANGED(
                         getx.getMessageSequenceNumber(),
-                        myNodeId,
+                        myNodeId(),
                         line.getId(),
                         line.getOwner(),
                         MessageType.GETX
@@ -194,7 +197,7 @@ class InternalCacheImpl implements InternalCache {
             line.addSharer(get.getSender());
             return new Message.PUT(
                     get.getMessageSequenceNumber(),
-                    myNodeId,
+                    myNodeId(),
                     line.getId(),
                     line.getVersion(),
                     line.resetReaderAndGetReadOnlyData().retain()
@@ -207,7 +210,7 @@ class InternalCacheImpl implements InternalCache {
                 // in the sharer map and see who the new owner is
                 return new Message.OWNER_CHANGED(
                         get.getMessageSequenceNumber(),
-                        myNodeId,
+                        myNodeId(),
                         line.getId(),
                         line.getOwner(),
                         MessageType.GET
@@ -218,7 +221,7 @@ class InternalCacheImpl implements InternalCache {
                 // I'll just acknowledge the message and move on with my life
                 return new Message.ACK(
                         get.getMessageSequenceNumber(),
-                        myNodeId,
+                        myNodeId(),
                         get.lineId
                 );
             }
@@ -238,7 +241,7 @@ class InternalCacheImpl implements InternalCache {
             CacheLine newLine = new CacheLine(
                     putx.lineId,
                     putx.version,
-                    myNodeId,
+                    myNodeId(),
                     putx.sharers.isEmpty() ? CacheLineState.EXCLUSIVE : CacheLineState.OWNED,
                     putx.data
             );
@@ -251,7 +254,7 @@ class InternalCacheImpl implements InternalCache {
             // One reason for that is that there might be other threads
             // waiting to grab a lock on this line.
             // If we switch the objects under the waiters all hell will break loose.
-            oldLine.setOwner(myNodeId);
+            oldLine.setOwner(myNodeId());
             oldLine.setSharers(putx.sharers);
             oldLine.setState(
                     oldLine.getSharers().isEmpty() ? CacheLineState.EXCLUSIVE : CacheLineState.OWNED
@@ -295,7 +298,7 @@ class InternalCacheImpl implements InternalCache {
         }
         return new Message.INVACK(
                 inv.getMessageSequenceNumber(),
-                myNodeId,
+                myNodeId(),
                 inv.lineId
         );
     }
@@ -321,10 +324,10 @@ class InternalCacheImpl implements InternalCache {
             final Message.Request messageToSend;
             switch (ownerChanged.originalMsgType) {
                 case GET:
-                    messageToSend = new Message.GET(myNodeId, ownerChanged.lineId);
+                    messageToSend = new Message.GET(myNodeId(), ownerChanged.lineId);
                     break;
                 case GETX:
-                    messageToSend = new Message.GETX(myNodeId, ownerChanged.lineId);
+                    messageToSend = new Message.GETX(myNodeId(), ownerChanged.lineId);
                     break;
                 default:
                     throw new RuntimeException("unknown message type " + ownerChanged.originalMsgType);
@@ -377,7 +380,7 @@ class InternalCacheImpl implements InternalCache {
         CacheLine line = new CacheLine(
                 newLineId,
                 0,
-                comms.myNodeId,
+                myNodeId(),
                 CacheLineState.EXCLUSIVE,
                 null
         );
@@ -396,7 +399,7 @@ class InternalCacheImpl implements InternalCache {
         CacheLine line = new CacheLine(
                 newLineId,
                 0,
-                comms.myNodeId,
+                myNodeId(),
                 CacheLineState.EXCLUSIVE,
                 null
         );
@@ -456,7 +459,7 @@ class InternalCacheImpl implements InternalCache {
                 line = new CacheLine(
                         lineId,
                         0,
-                        myNodeId,
+                        myNodeId(),
                         CacheLineState.EXCLUSIVE,
                         null
                 );
@@ -480,7 +483,7 @@ class InternalCacheImpl implements InternalCache {
     }
 
     private CacheLine getxLineRemotely(long lineId) throws IOException {
-        Message.GETX getx = new Message.GETX(myNodeId, lineId);
+        Message.GETX getx = new Message.GETX(myNodeId(), lineId);
         Future<Void> getxFuture = innerGenericGetLineRemotely(getx);
         try {
             getxFuture.get(TIMEOUT_SECS, TimeUnit.SECONDS);
@@ -492,7 +495,7 @@ class InternalCacheImpl implements InternalCache {
         if (line == null) {
             return null;
         } else {
-            CompletableFuture<Void> invalidateFuture = comms.send(line.getSharers(), new Message.INV(myNodeId, lineId));
+            CompletableFuture<Void> invalidateFuture = comms.send(line.getSharers(), new Message.INV(myNodeId(), lineId));
 
             try {
                 invalidateFuture.get(TIMEOUT_SECS, TimeUnit.SECONDS);
@@ -505,7 +508,7 @@ class InternalCacheImpl implements InternalCache {
     }
 
     private CacheLine getLineRemotely(long lineId) throws IOException {
-        Message.GET get = new Message.GET(comms.myNodeId, lineId);
+        Message.GET get = new Message.GET(myNodeId(), lineId);
         Future<Void> getFuture = innerGenericGetLineRemotely(get);
         try {
             getFuture.get(TIMEOUT_SECS, TimeUnit.SECONDS);
@@ -578,6 +581,17 @@ class InternalCacheImpl implements InternalCache {
         txn.recordUndo(lineToChange, buffer);
     }
 
+    short myNodeId() {
+        if (myNodeId == -1) {
+            synchronized (myNodeIdProvider) {
+                if (myNodeId == -1) {
+                    myNodeId = myNodeIdProvider.get();
+                }
+            }
+        }
+        return myNodeId;
+    }
+
     @Override
     public void close() throws IOException {
         comms.close();
@@ -591,6 +605,6 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public String toString() {
-        return "myNodeId: " + myNodeId;
+        return "myNodeId: " + myNodeId();
     }
 }

@@ -23,6 +23,7 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalListeners;
 import com.google.common.hash.Hashing;
+import com.google.inject.Provider;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.EventLoopGroup;
@@ -30,6 +31,7 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.Future;
 import io.netty.util.internal.SocketUtils;
+import org.carbon.grid.CarbonGrid;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.slf4j.Logger;
@@ -110,24 +112,21 @@ class GridCommunications implements Closeable {
 
     private final AtomicInteger sequence = new AtomicInteger(new Random().nextInt());
 
-    final short myNodeId;
     private final int myServerPort;
+    private final Provider<Short> myNodeIdProvider;
+    private short myNodeId = -1;
     private final TcpGridServer tcpGridServer;
     private final InternalCache internalCache;
 
-    GridCommunications(int myNodeId, int port, InternalCache internalCache) {
-        this((short)myNodeId, port, internalCache);
-    }
-
-    private GridCommunications(short myNodeId, int port, InternalCache internalCache) {
-        this.myNodeId = myNodeId;
-        this.myServerPort = port;
+    GridCommunications(Provider<Short> myNodeIdProvider, CarbonGrid.ServerConfig serverConfig, InternalCache internalCache) {
+        this.myNodeIdProvider = myNodeIdProvider;
         this.tcpGridServer = new TcpGridServer(
-                port,
+                serverConfig.port(),
                 bossGroup,
                 workerGroup,
                 this::handleMessage
         );
+        this.myServerPort = serverConfig.port();
         this.internalCache = internalCache;
     }
 
@@ -193,7 +192,7 @@ class GridCommunications implements Closeable {
         // do bookkeeping in order to be able to track the response
         long hash = hashNodeIdMessageSeq(toNode, msg.getMessageSequenceNumber());
         messageIdToLatchAndMessage.put(hash, new LatchAndMessage(futureToUse, msg));
-        logger.info("{} [send] {} to {} hash {}", myNodeId, msg, toNode, hash);
+        logger.info("{} [send] {} to {} hash {}", myNodeId(), msg, toNode, hash);
         try {
             // do error handling in an async handler (netty-style)
             client.send(msg).addListener(new FailingCompleteListener(hash, messageIdToLatchAndMessage));
@@ -213,10 +212,10 @@ class GridCommunications implements Closeable {
     // a get or getx request
     void reactToResponse(Message.Response responseIReceived, short toNode, Message.Request requestToSend) {
         // search for the message that I sent myself back in the day to carry over the associated future
-        long hash = hashNodeIdMessageSeq(myNodeId, responseIReceived.getMessageSequenceNumber());
+        long hash = hashNodeIdMessageSeq(myNodeId(), responseIReceived.getMessageSequenceNumber());
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
         if (lAndM == null) {
-            logger.warn("{} [reactToResponse] won't react hash {} message {}", myNodeId, hash, responseIReceived);
+            logger.warn("{} [reactToResponse] won't react hash {} message {}", myNodeId(), hash, responseIReceived);
             return;
         }
 
@@ -236,7 +235,7 @@ class GridCommunications implements Closeable {
         requestToSend.setMessageSequenceNumber(nextSequenceIdForMessageToSend());
         long newHash = hashNodeIdMessageSeq(toNode, requestToSend.getMessageSequenceNumber());
         messageIdToLatchAndMessage.put(newHash, new LatchAndMessage(lAndM.latch, requestToSend));
-        logger.info("{} [reactToResponse] {} to {} hash {}", myNodeId, requestToSend, toNode, hash);
+        logger.info("{} [reactToResponse] {} to {} hash {}", myNodeId(), requestToSend, toNode, hash);
         try {
             // do error handling in an async handler (netty-style)
             client.send(requestToSend).addListener(new FailingCompleteListener(newHash, messageIdToLatchAndMessage));
@@ -277,7 +276,7 @@ class GridCommunications implements Closeable {
         // is also buffers all incoming messages for this cache line in a queue
         ConcurrentLinkedQueue<Message> backlog = cacheLineIdToBacklog.putIfAbsent(backlogHash, new ConcurrentLinkedQueue<>());
         if (backlog == null) {
-            logger.info("{} [handleMessage] {} with hash {}", myNodeId, msg, backlogHash);
+            logger.info("{} [handleMessage] {} with hash {}", myNodeId(), msg, backlogHash);
             // go ahead and process
             innerHandleMessage(msg);
 
@@ -286,7 +285,7 @@ class GridCommunications implements Closeable {
             backlog = cacheLineIdToBacklog.get(backlogHash);
             while (backlog.peek() != null) {
                 Message backlogMsg = backlog.poll();
-                logger.info("{} processing backlog message {} with hash {}", myNodeId, backlogMsg, backlogHash);
+                logger.info("{} processing backlog message {} with hash {}", myNodeId(), backlogMsg, backlogHash);
                 innerHandleMessage(backlogMsg);
                 // remove the hash if the backlog is empty
                 // this runs atomically
@@ -298,7 +297,7 @@ class GridCommunications implements Closeable {
             removeIfEmpty(backlogHash, cacheLineIdToBacklog);
         } else {
             backlog.add(msg);
-            logger.info("{} putting message into the backlog {} with hash {}", myNodeId, msg, backlogHash);
+            logger.info("{} putting message into the backlog {} with hash {}", myNodeId(), msg, backlogHash);
         }
     }
 
@@ -384,9 +383,9 @@ class GridCommunications implements Closeable {
         long hash = hashNodeIdMessageSeq(response.getSender(), response.getMessageSequenceNumber());
         LatchAndMessage lAndM = messageIdToLatchAndMessage.remove(hash);
         if (lAndM == null) {
-            logger.info("{} [ackResponse] failure id {} sender {} hash {} message {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash, response);
+            logger.info("{} [ackResponse] failure id {} sender {} hash {} message {}", myNodeId(), response.getMessageSequenceNumber(), response.getSender(), hash, response);
         } else {
-            logger.info("{} [ackResponse] success id {} sender {} hash {} message {}", myNodeId, response.getMessageSequenceNumber(), response.getSender(), hash, response);
+            logger.info("{} [ackResponse] success id {} sender {} hash {} message {}", myNodeId(), response.getMessageSequenceNumber(), response.getSender(), hash, response);
             lAndM.latch.complete(response.type);
         }
     }
@@ -431,9 +430,20 @@ class GridCommunications implements Closeable {
         }
     }
 
+    short myNodeId() {
+        if (myNodeId == -1) {
+            synchronized (myNodeIdProvider) {
+                if (myNodeId == -1) {
+                    myNodeId = myNodeIdProvider.get();
+                }
+            }
+        }
+        return myNodeId;
+    }
+
     @Override
     public String toString () {
-        return "myNodeId: " + myNodeId + " myServerPort: " + myServerPort;
+        return "myNodeId: " + myNodeId() + " myServerPort: " + myServerPort;
     }
 
     static class LatchAndMessage {

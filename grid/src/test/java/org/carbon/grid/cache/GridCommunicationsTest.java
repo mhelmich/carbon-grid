@@ -17,9 +17,11 @@
 package org.carbon.grid.cache;
 
 import com.google.common.cache.LoadingCache;
+import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.ChannelFuture;
+import org.carbon.grid.CarbonGrid;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -70,7 +72,7 @@ public class GridCommunicationsTest {
         }).when(cacheMock).handleResponse(any(Message.Response.class));
         ExecutorService es = Executors.newFixedThreadPool(1);
         try {
-            try (GridCommunications comm = new GridCommunications(sender, 4444, cacheMock)) {
+            try (GridCommunications comm = mockGridCommunications(sender, 4444, cacheMock)) {
                 NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> backlogMap = getBacklogMap(comm);
                 Message.ACK ack1 = new Message.ACK(Integer.MAX_VALUE, sender, lineId);
                 Message.ACK ack2 = new Message.ACK(Integer.MIN_VALUE, sender, lineId);
@@ -122,7 +124,7 @@ public class GridCommunicationsTest {
 
         ExecutorService es = Executors.newFixedThreadPool(1);
         try {
-            try (GridCommunications comm = new GridCommunications(sender, 4444, cacheMock)) {
+            try (GridCommunications comm = mockGridCommunications(sender, 4444, cacheMock)) {
                 NonBlockingHashMapLong<ConcurrentLinkedQueue<Message>> backlogMap = getBacklogMap(comm);
                 Message.ACK ack1 = new Message.ACK(Integer.MAX_VALUE, sender, lineId);
                 Message.ACK ack2 = new Message.ACK(Integer.MIN_VALUE, sender, lineId);
@@ -165,7 +167,7 @@ public class GridCommunicationsTest {
 
         Message.GET requestToSend = new Message.GET(sender, lineId);
         Message.OWNER_CHANGED oc1 = new Message.OWNER_CHANGED(messageRequestId, (short)999, lineId, newOwner, MessageType.GET);
-        try (GridCommunications comm = new GridCommunications(sender, 4444, cacheMock)) {
+        try (GridCommunications comm = mockGridCommunications(sender, 4444, cacheMock)) {
 
             getNodeIdToClient(comm).put(newOwner, mockClient);
             NonBlockingHashMapLong<GridCommunications.LatchAndMessage> msgIdToLatch = getMessageIdToLatchAndMessage(comm);
@@ -173,7 +175,7 @@ public class GridCommunicationsTest {
             get.messageSequenceNumber = messageRequestId;
 
             CompletableFuture<MessageType> latch = new CompletableFuture<>();
-            msgIdToLatch.put(comm.hashNodeIdMessageSeq(comm.myNodeId, oc1.getMessageSequenceNumber()), new GridCommunications.LatchAndMessage(latch, get));
+            msgIdToLatch.put(comm.hashNodeIdMessageSeq(comm.myNodeId(), oc1.getMessageSequenceNumber()), new GridCommunications.LatchAndMessage(latch, get));
             comm.reactToResponse(oc1, oc1.newOwner, requestToSend);
             assertNotNull(msgIdToLatch.get(comm.hashNodeIdMessageSeq(oc1.newOwner, requestToSend.getMessageSequenceNumber())));
         }
@@ -217,9 +219,9 @@ public class GridCommunicationsTest {
             return new Message.PUT(req.messageSequenceNumber, sender777, lineId, 5, buffer);
         }).when(cacheMock777).handleRequest(any(Message.Request.class));
 
-        try (GridCommunications comm555 = new GridCommunications(sender555, port555, cacheMock555)) {
-            try (GridCommunications comm666 = new GridCommunications(sender666, port666, cacheMock666)) {
-                try (GridCommunications comm777 = new GridCommunications(sender777, port777, cacheMock777)) {
+        try (GridCommunications comm555 = mockGridCommunications(sender555, port555, cacheMock555)) {
+            try (GridCommunications comm666 = mockGridCommunications(sender666, port666, cacheMock666)) {
+                try (GridCommunications comm777 = mockGridCommunications(sender777, port777, cacheMock777)) {
                     comm555.addPeer(sender666, "localhost", port666);
                     comm555.addPeer(sender777, "localhost", port777);
                     comm666.addPeer(sender555, "localhost", port555);
@@ -267,5 +269,19 @@ public class GridCommunicationsTest {
         ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer(1024);
         buffer.writeBytes(bites);
         return buffer;
+    }
+
+    private GridCommunications mockGridCommunications(int myNodeId, int port, InternalCache internalCache) {
+        return new GridCommunications(mockNodeIdProvider((short)myNodeId), mockServerConfig(port), internalCache);
+    }
+
+    private CarbonGrid.ServerConfig mockServerConfig(int port) {
+        CarbonGrid.ServerConfig sc = Mockito.mock(CarbonGrid.ServerConfig.class);
+        when(sc.port()).thenReturn(port);
+        return sc;
+    }
+
+    private Provider<Short> mockNodeIdProvider(short nodeId) {
+        return () -> nodeId;
     }
 }

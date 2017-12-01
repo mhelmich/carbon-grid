@@ -16,11 +16,14 @@
 
 package org.carbon.grid.cache;
 
+import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import org.carbon.grid.CarbonGrid;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.junit.AfterClass;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -30,6 +33,7 @@ import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.mockito.Mockito.when;
 
 public class TransactionTest {
     private static final Set<ByteBuf> buffers = new HashSet<>();
@@ -40,7 +44,7 @@ public class TransactionTest {
         ByteBuf initialBuffer = newRandomBuffer();
         ByteBuf bufferToOverrideWith = newRandomBuffer();
 
-        try (InternalCacheImpl cache = new InternalCacheImpl((short)123, 23455)) {
+        try (InternalCacheImpl cache = mockCache(123, 23455)) {
             CacheLine line = putNewEmptyCacheLineIntoCache(cache);
             line.lock();
             line.setData(initialBuffer);
@@ -59,7 +63,7 @@ public class TransactionTest {
         int newVersion = 631;
         long lineId = 987654321;
 
-        try (InternalCacheImpl cache = new InternalCacheImpl((short)123, 23455)) {
+        try (InternalCacheImpl cache = mockCache(123, 23455)) {
             TransactionImpl txn = (TransactionImpl) cache.newTransaction();
             txn.recordUndo(lineId, newVersion, buffer);
             txn.commit();
@@ -71,7 +75,7 @@ public class TransactionTest {
         ByteBuf initialBuffer = newRandomBuffer();
         ByteBuf bufferToOverrideWith = newRandomBuffer();
 
-        try (InternalCacheImpl cache = new InternalCacheImpl((short)123, 23455)) {
+        try (InternalCacheImpl cache = mockCache(123, 23455)) {
             CacheLine line = putNewEmptyCacheLineIntoCache(cache);
             line.lock();
             line.setData(initialBuffer);
@@ -133,5 +137,23 @@ public class TransactionTest {
         Field field = InternalCacheImpl.class.getDeclaredField("owned");
         field.setAccessible(true);
         return (NonBlockingHashMapLong<CacheLine>) field.get(cache);
+    }
+
+    private InternalCacheImpl mockCache(int nodeId, int port) {
+        return mockCache((short) nodeId, port);
+    }
+
+    private InternalCacheImpl mockCache(short nodeId, int port) {
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockServerConfig(port));
+    }
+
+    private CarbonGrid.ServerConfig mockServerConfig(int port) {
+        CarbonGrid.ServerConfig sc = Mockito.mock(CarbonGrid.ServerConfig.class);
+        when(sc.port()).thenReturn(port);
+        return sc;
+    }
+
+    private Provider<Short> mockNodeIdProvider(short nodeId) {
+        return () -> nodeId;
     }
 }

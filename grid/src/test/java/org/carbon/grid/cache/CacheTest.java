@@ -16,9 +16,12 @@
 
 package org.carbon.grid.cache;
 
+import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import org.carbon.grid.CarbonGrid;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -30,6 +33,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.when;
 
 public class CacheTest {
     private final Random random = new Random();
@@ -40,13 +44,13 @@ public class CacheTest {
         short node2 = 456;
         int port1 = 4444;
         int port2 = 5555;
-        try (InternalCacheImpl cache123 = new InternalCacheImpl(node1, port1)) {
-            try (InternalCacheImpl cache456 = new InternalCacheImpl(node2, port2)) {
+        try (InternalCacheImpl cache123 = mockCache(node1, port1)) {
+            try (InternalCacheImpl cache456 = mockCache(node2, port2)) {
                 cache123.comms.addPeer(node2, "localhost", port2);
                 cache456.comms.addPeer(node1, "localhost", port1);
 
                 Message.GET get = new Message.GET(node1, 999L);
-                Future<Void> f1 = cache123.comms.send(cache456.myNodeId, get);
+                Future<Void> f1 = cache123.comms.send(cache456.myNodeId(), get);
                 f1.get();
                 assertTrue(f1.isDone());
             }
@@ -79,7 +83,7 @@ public class CacheTest {
     @Test
     public void testAbsentLine() throws IOException {
         ByteBuf buffer = null;
-        try (InternalCacheImpl cache123 = new InternalCacheImpl(123, 5555)) {
+        try (InternalCacheImpl cache123 = mockCache(123, 5555)) {
             buffer = cache123.get(123);
             assertNull(buffer);
         } finally {
@@ -90,7 +94,7 @@ public class CacheTest {
     @Test
     public void testAllocateEmpty() throws IOException {
         ByteBuf buffer = null;
-        try (InternalCacheImpl cache123 = new InternalCacheImpl(123, 5555)) {
+        try (InternalCacheImpl cache123 = mockCache(123, 5555)) {
             Transaction txn = cache123.newTransaction();
             long emptyBlock = cache123.allocateEmpty(txn);
             txn.commit();
@@ -124,7 +128,7 @@ public class CacheTest {
             CacheLine line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertNotNull(line123);
             assertEquals(CacheLineState.EXCLUSIVE, line123.getState());
-            assertEquals(threeCaches.cache123.myNodeId, line123.getOwner());
+            assertEquals(threeCaches.cache123.myNodeId(), line123.getOwner());
             CacheLine line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNull(line456);
 
@@ -136,10 +140,10 @@ public class CacheTest {
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNotNull(line456);
             assertEquals(CacheLineState.SHARED, line456.getState());
-            assertEquals(threeCaches.cache123.myNodeId, line456.getOwner());
+            assertEquals(threeCaches.cache123.myNodeId(), line456.getOwner());
             line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertEquals(CacheLineState.OWNED, line123.getState());
-            assertEquals(threeCaches.cache123.myNodeId, line123.getOwner());
+            assertEquals(threeCaches.cache123.myNodeId(), line123.getOwner());
             assertTrue(line123.getSharers().size() == 1);
 
             txn = threeCaches.cache456.newTransaction();
@@ -156,11 +160,11 @@ public class CacheTest {
             assertNotNull(line456);
             // since there are no sharers this line will be in status EXCLUSIVE
             assertEquals(CacheLineState.EXCLUSIVE, line456.getState());
-            assertEquals(threeCaches.cache456.myNodeId, line456.getOwner());
+            assertEquals(threeCaches.cache456.myNodeId(), line456.getOwner());
             assertTrue(line456.getSharers().isEmpty());
             line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertEquals(CacheLineState.INVALID, line123.getState());
-            assertEquals(threeCaches.cache456.myNodeId, line123.getOwner());
+            assertEquals(threeCaches.cache456.myNodeId(), line123.getOwner());
         } finally {
             releaseByteBuf(localBB, localBB2, remoteBB);
             closeThreeCaches(threeCaches);
@@ -187,7 +191,7 @@ public class CacheTest {
             CacheLine line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertNotNull(line123);
             assertEquals(CacheLineState.EXCLUSIVE, line123.getState());
-            assertEquals(threeCaches.cache123.myNodeId, line123.getOwner());
+            assertEquals(threeCaches.cache123.myNodeId(), line123.getOwner());
             CacheLine line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNull(line456);
             CacheLine line789 = threeCaches.cache789.innerGetLineLocally(newCacheLineId);
@@ -200,10 +204,10 @@ public class CacheTest {
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNotNull(line456);
             assertEquals(CacheLineState.SHARED, line456.getState());
-            assertEquals(threeCaches.cache123.myNodeId, line456.getOwner());
+            assertEquals(threeCaches.cache123.myNodeId(), line456.getOwner());
             line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertEquals(CacheLineState.OWNED, line123.getState());
-            assertEquals(threeCaches.cache123.myNodeId, line123.getOwner());
+            assertEquals(threeCaches.cache123.myNodeId(), line123.getOwner());
             assertTrue(line123.getSharers().size() == 1);
             // pull the cache line into cache 3
             localBB3 = threeCaches.cache789.get(newCacheLineId);
@@ -226,12 +230,12 @@ public class CacheTest {
             assertNotNull(line456);
             // since there are no sharers this line will be in status EXCLUSIVE
             assertEquals(CacheLineState.EXCLUSIVE, line456.getState());
-            assertEquals(threeCaches.cache456.myNodeId, line456.getOwner());
+            assertEquals(threeCaches.cache456.myNodeId(), line456.getOwner());
             line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertEquals(CacheLineState.INVALID, line123.getState());
-            assertEquals(threeCaches.cache456.myNodeId, line123.getOwner());
+            assertEquals(threeCaches.cache456.myNodeId(), line123.getOwner());
             // but as it turns out cache 789 never heard about the change in ownership
-            assertEquals(threeCaches.cache456.myNodeId, line789.getOwner());
+            assertEquals(threeCaches.cache456.myNodeId(), line789.getOwner());
         } finally {
             releaseByteBuf(localBB, localBB2, localBB3, remoteBB);
             closeThreeCaches(threeCaches);
@@ -256,7 +260,7 @@ public class CacheTest {
             CacheLine line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertNotNull(line123);
             assertEquals(CacheLineState.EXCLUSIVE, line123.getState());
-            assertEquals(threeCaches.cache123.myNodeId, line123.getOwner());
+            assertEquals(threeCaches.cache123.myNodeId(), line123.getOwner());
             CacheLine line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNull(line456);
             CacheLine line789 = threeCaches.cache789.innerGetLineLocally(newCacheLineId);
@@ -280,13 +284,13 @@ public class CacheTest {
             line456 = threeCaches.cache456.innerGetLineLocally(newCacheLineId);
             assertNotNull(line456);
             assertEquals(CacheLineState.EXCLUSIVE, line456.getState());
-            assertEquals(threeCaches.cache456.myNodeId, line456.getOwner());
+            assertEquals(threeCaches.cache456.myNodeId(), line456.getOwner());
             line123 = threeCaches.cache123.innerGetLineLocally(newCacheLineId);
             assertEquals(CacheLineState.INVALID, line123.getState());
-            assertEquals(threeCaches.cache456.myNodeId, line123.getOwner());
+            assertEquals(threeCaches.cache456.myNodeId(), line123.getOwner());
             // putx also sends messages to every sharer the invalidate line in question
             // and then it also changes ownership in the process
-            assertEquals(threeCaches.cache456.myNodeId, line789.getOwner());
+            assertEquals(threeCaches.cache456.myNodeId(), line789.getOwner());
             // now we're trying to get the cache line from 789
             // that in turn should make a few round trips necessary
             assertEquals(CacheLineState.INVALID, line789.getState());
@@ -361,9 +365,9 @@ public class CacheTest {
         int port1 = 4444;
         int port2 = 5555;
         int port3 = 6666;
-        InternalCacheImpl internalCache1 = new InternalCacheImpl(node1, port1);
-        InternalCacheImpl internalCache2 = new InternalCacheImpl(node2, port2);
-        InternalCacheImpl internalCache3 = new InternalCacheImpl(node3, port3);
+        InternalCacheImpl internalCache1 = mockCache(node1, port1);
+        InternalCacheImpl internalCache2 = mockCache(node2, port2);
+        InternalCacheImpl internalCache3 = mockCache(node3, port3);
 
         internalCache1.comms.addPeer(node2, "localhost", port2);
         internalCache1.comms.addPeer(node3, "localhost", port3);
@@ -400,5 +404,23 @@ public class CacheTest {
             this.cache456 = cache456;
             this.cache789 = cache789;
         }
+    }
+
+    private InternalCacheImpl mockCache(int nodeId, int port) {
+        return mockCache((short) nodeId, port);
+    }
+
+    private InternalCacheImpl mockCache(short nodeId, int port) {
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockServerConfig(port));
+    }
+
+    private CarbonGrid.ServerConfig mockServerConfig(int port) {
+        CarbonGrid.ServerConfig sc = Mockito.mock(CarbonGrid.ServerConfig.class);
+        when(sc.port()).thenReturn(port);
+        return sc;
+    }
+
+    private Provider<Short> mockNodeIdProvider(short nodeId) {
+        return () -> nodeId;
     }
 }

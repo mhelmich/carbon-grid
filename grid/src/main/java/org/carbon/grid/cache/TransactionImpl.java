@@ -70,7 +70,7 @@ class TransactionImpl implements Transaction {
                 // cache lines need to be in exclusive state
                 if (!CacheLineState.EXCLUSIVE.equals(line.getState())) throw new IllegalStateException("Cache line with id " + undo.lineId + " is not in EXCLUSIVE state");
 
-                line.setOwner(cache.myNodeId);
+                line.setOwner(cache.myNodeId());
                 line.setVersion(undo.version);
                 line.setData(undo.buffer);
             }
