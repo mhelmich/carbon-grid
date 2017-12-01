@@ -16,6 +16,7 @@
 
 package org.carbon.grid.cluster;
 
+@FunctionalInterface
 public interface GloballyUniqueIdAllocator {
     Long nextUniqueId();
 }

@@ -16,13 +16,9 @@
 
 package org.carbon.grid.cache;
 
-import com.google.inject.AbstractModule;
-import com.google.inject.Singleton;
+import java.net.InetSocketAddress;
+import java.util.function.BiConsumer;
 
-public class CacheModule extends AbstractModule {
-    @Override
-    protected void configure() {
-        bind(InternalCache.class).to(InternalCacheImpl.class).in(Singleton.class);
-        bind(PeerChangeConsumer.class).to(PeerChangeConsumerImpl.class).in(Singleton.class);
-    }
+@FunctionalInterface
+public interface PeerChangeConsumer extends BiConsumer<Short, InetSocketAddress> {
 }

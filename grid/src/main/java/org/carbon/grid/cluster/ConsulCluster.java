@@ -36,7 +36,7 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.internal.SocketUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.carbon.grid.CarbonGrid;
-import org.carbon.grid.cache.InternalCache;
+import org.carbon.grid.cache.PeerChangeConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -79,12 +79,7 @@ class ConsulCluster implements Cluster {
     private final AtomicBoolean isUp = new AtomicBoolean(false);
 
     @Inject
-    ConsulCluster(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig, InternalCache cache) {
-        this(serverConfig, consulConfig, cache::handlePeerChange);
-    }
-
-    @VisibleForTesting
-    ConsulCluster(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig, BiConsumer<Short, InetSocketAddress> peerChangeConsumer) {
+    ConsulCluster(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig, PeerChangeConsumer peerChangeConsumer) {
         this.executorService = Executors.newScheduledThreadPool(3, new DefaultThreadFactory("consul-session-group"));
         this.consul = Consul.builder()
                 .withHostAndPort(HostAndPort.fromParts(consulConfig.host(), consulConfig.port()))

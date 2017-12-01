@@ -16,13 +16,22 @@
 
 package org.carbon.grid.cache;
 
-import com.google.inject.AbstractModule;
+import com.google.inject.Inject;
 import com.google.inject.Singleton;
 
-public class CacheModule extends AbstractModule {
+import java.net.InetSocketAddress;
+
+@Singleton
+class PeerChangeConsumerImpl implements PeerChangeConsumer {
+    private final InternalCache cache;
+
+    @Inject
+    PeerChangeConsumerImpl(InternalCache cache) {
+        this.cache = cache;
+    }
+
     @Override
-    protected void configure() {
-        bind(InternalCache.class).to(InternalCacheImpl.class).in(Singleton.class);
-        bind(PeerChangeConsumer.class).to(PeerChangeConsumerImpl.class).in(Singleton.class);
+    public void accept(Short nodeId, InetSocketAddress addr) {
+        cache.handlePeerChange(nodeId, addr);
     }
 }

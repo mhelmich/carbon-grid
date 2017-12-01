@@ -20,6 +20,7 @@ import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
 import org.apache.commons.lang3.tuple.Pair;
 import org.carbon.grid.CarbonGrid;
+import org.carbon.grid.cache.PeerChangeConsumer;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -36,7 +37,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BiConsumer;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -46,7 +46,7 @@ import static org.mockito.Mockito.when;
 
 public class ConsulClusterTest {
     private final static int TIMEOUT_SECS = 555;
-    private final BiConsumer<Short, InetSocketAddress> emptyPeerHandler = (id, addr) -> {};
+    private final PeerChangeConsumer emptyPeerHandler = (id, addr) -> {};
 
     @Test
     public void testRegister() throws IOException {
@@ -194,7 +194,7 @@ public class ConsulClusterTest {
         }
     }
 
-    private ConsulCluster mockConsulCluster(int servicePort, BiConsumer<Short, InetSocketAddress> peerChangeConsumer) {
+    private ConsulCluster mockConsulCluster(int servicePort, PeerChangeConsumer peerChangeConsumer) {
         return new ConsulCluster(mockServerConfig(servicePort), mockConsulConfig(), peerChangeConsumer);
     }
 
