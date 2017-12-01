@@ -21,6 +21,7 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import org.carbon.grid.cache.Cache;
 import org.carbon.grid.cache.CacheModule;
+import org.carbon.grid.cache.InternalCache;
 import org.carbon.grid.cluster.Cluster;
 import org.carbon.grid.cluster.ClusterModule;
 import org.cfg4j.provider.ConfigurationProvider;
@@ -82,12 +83,12 @@ public final class CarbonGrid implements Closeable {
         );
 
         cluster = injector.getInstance(Cluster.class);
-//        cache = injector.getInstance(Cache.class);
+        cache = injector.getInstance(InternalCache.class);
     }
 
     public void shutdownGracefully() throws IOException {
         getCluster().close();
-//        getCache().close();
+        getCache().close();
     }
 
     public Cache getCache() {
