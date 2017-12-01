@@ -30,7 +30,6 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.Future;
-import io.netty.util.internal.SocketUtils;
 import org.carbon.grid.CarbonGrid;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
@@ -133,10 +132,6 @@ class GridCommunications implements Closeable {
     void addPeer(short nodeId, InetSocketAddress addr) {
         logger.info("adding peer {} {}", nodeId, addr);
         nodeIdToSocketAddress.put(nodeId, addr);
-    }
-
-    void addPeer(short nodeId, String host, int port) {
-        addPeer(nodeId, SocketUtils.socketAddress(host, port));
     }
 
     // use this for communication with a particular node

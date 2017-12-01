@@ -21,6 +21,7 @@ import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.ChannelFuture;
+import io.netty.util.internal.SocketUtils;
 import org.carbon.grid.CarbonGrid;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.junit.Test;
@@ -222,12 +223,13 @@ public class GridCommunicationsTest {
         try (GridCommunications comm555 = mockGridCommunications(sender555, port555, cacheMock555)) {
             try (GridCommunications comm666 = mockGridCommunications(sender666, port666, cacheMock666)) {
                 try (GridCommunications comm777 = mockGridCommunications(sender777, port777, cacheMock777)) {
-                    comm555.addPeer(sender666, "localhost", port666);
-                    comm555.addPeer(sender777, "localhost", port777);
-                    comm666.addPeer(sender555, "localhost", port555);
-                    comm666.addPeer(sender777, "localhost", port777);
-                    comm777.addPeer(sender555, "localhost", port555);
-                    comm777.addPeer(sender666, "localhost", port666);
+
+                    comm555.addPeer(sender666, SocketUtils.socketAddress("localhost", port666));
+                    comm555.addPeer(sender777, SocketUtils.socketAddress("localhost", port777));
+                    comm666.addPeer(sender555, SocketUtils.socketAddress("localhost", port555));
+                    comm666.addPeer(sender777, SocketUtils.socketAddress("localhost", port777));
+                    comm777.addPeer(sender555, SocketUtils.socketAddress("localhost", port555));
+                    comm777.addPeer(sender666, SocketUtils.socketAddress("localhost", port666));
 
                     Message.GET get = new Message.GET(sender555, lineId);
                     comm555.broadcast(get, MessageType.PUT).get(TIMEOUT, TimeUnit.SECONDS);

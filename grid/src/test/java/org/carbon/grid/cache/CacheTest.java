@@ -19,6 +19,7 @@ package org.carbon.grid.cache;
 import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.util.internal.SocketUtils;
 import org.carbon.grid.CarbonGrid;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -46,8 +47,8 @@ public class CacheTest {
         int port2 = 5555;
         try (InternalCacheImpl cache123 = mockCache(node1, port1)) {
             try (InternalCacheImpl cache456 = mockCache(node2, port2)) {
-                cache123.comms.addPeer(node2, "localhost", port2);
-                cache456.comms.addPeer(node1, "localhost", port1);
+                cache123.handlePeerChange(node2, SocketUtils.socketAddress("localhost", port2));
+                cache456.handlePeerChange(node1, SocketUtils.socketAddress("localhost", port1));
 
                 Message.GET get = new Message.GET(node1, 999L);
                 Future<Void> f1 = cache123.comms.send(cache456.myNodeId(), get);
@@ -369,12 +370,12 @@ public class CacheTest {
         InternalCacheImpl internalCache2 = mockCache(node2, port2);
         InternalCacheImpl internalCache3 = mockCache(node3, port3);
 
-        internalCache1.comms.addPeer(node2, "localhost", port2);
-        internalCache1.comms.addPeer(node3, "localhost", port3);
-        internalCache2.comms.addPeer(node1, "localhost", port1);
-        internalCache2.comms.addPeer(node3, "localhost", port3);
-        internalCache3.comms.addPeer(node1, "localhost", port1);
-        internalCache3.comms.addPeer(node2, "localhost", port2);
+        internalCache1.handlePeerChange(node2, SocketUtils.socketAddress("localhost", port2));
+        internalCache1.handlePeerChange(node3, SocketUtils.socketAddress("localhost", port3));
+        internalCache2.handlePeerChange(node1, SocketUtils.socketAddress("localhost", port1));
+        internalCache2.handlePeerChange(node3, SocketUtils.socketAddress("localhost", port3));
+        internalCache3.handlePeerChange(node1, SocketUtils.socketAddress("localhost", port1));
+        internalCache3.handlePeerChange(node2, SocketUtils.socketAddress("localhost", port2));
 
         return new ThreeCaches(internalCache1, internalCache2, internalCache3);
     }
