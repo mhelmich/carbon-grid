@@ -16,10 +16,12 @@
 
 package org.carbon.grid.cache;
 
+import java.net.InetSocketAddress;
+
 /**
  * This interface mostly defines handler and dispatcher methods.
  */
-interface InternalCache extends Cache {
+public interface InternalCache extends Cache {
     /**
      * This method is being called by all messages that are received by a client.
      */
@@ -31,4 +33,13 @@ interface InternalCache extends Cache {
      * When null is returned nothing will be sent in response!
      */
     Message.Response handleRequest(Message.Request request);
+
+    /**
+     * This method is called whenever the health status of nodes in the cluster changes.
+     * The responsibilities of this method include to diff the existing state with the state
+     * that is delivered.
+     * One way of dealing with this is that stash all nodes in a map nodeId -> addr. This way
+     * the new state overrides the old and everything's good.
+     */
+    void handlePeerChange(short nodeId, InetSocketAddress addr);
 }

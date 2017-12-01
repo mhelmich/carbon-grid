@@ -20,6 +20,8 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.net.HostAndPort;
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
 import com.orbitz.consul.Consul;
 import com.orbitz.consul.ConsulException;
 import com.orbitz.consul.KeyValueClient;
@@ -33,6 +35,8 @@ import com.orbitz.consul.option.ImmutablePutOptions;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.internal.SocketUtils;
 import org.apache.commons.lang3.tuple.Pair;
+import org.carbon.grid.CarbonGrid;
+import org.carbon.grid.cache.InternalCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,6 +56,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+@Singleton
 class ConsulCluster implements Cluster {
     private final static Logger logger = LoggerFactory.getLogger(ConsulCluster.class);
     private final static long CONSUL_TIMEOUT_SECS = 30L;
@@ -60,7 +65,7 @@ class ConsulCluster implements Cluster {
     private final static String serviceName = "carbon-grid";
     private final static int NUM_RETRIES = 10;
     private final static int ID_CHUNK_SIZE = 100;
-    final static int MIN_NODE_ID = 500;
+    final static short MIN_NODE_ID = 500;
 
     private final Consul consul;
     private final String consulSessionId;
@@ -73,7 +78,12 @@ class ConsulCluster implements Cluster {
     private final AtomicLong highWaterMarkCacheLineId = new AtomicLong(0);
     private final ServiceHealthCache shCache;
 
-    final String myNodeId;
+    private final String myNodeId;
+
+    @Inject
+    ConsulCluster(CarbonGrid.ServerConfig serverConfig, InternalCache cache) {
+        this(serverConfig.port(), cache::handlePeerChange);
+    }
 
     ConsulCluster(int myServicePort, BiConsumer<Short, InetSocketAddress> peerChangeConsumer) {
         this.executorService = Executors.newScheduledThreadPool(3, new DefaultThreadFactory("consul-session-group"));
@@ -263,7 +273,7 @@ class ConsulCluster implements Cluster {
     }
 
     @Override
-    public short getMyNodeId() {
+    public short myNodeId() {
         return Short.valueOf(myNodeId);
     }
 

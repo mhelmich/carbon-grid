@@ -17,10 +17,12 @@
 package org.carbon.grid.cluster;
 
 import com.google.inject.AbstractModule;
+import com.google.inject.Singleton;
 
 public class ClusterModule extends AbstractModule {
     @Override
     protected void configure() {
-
+        bind(Cluster.class).to(ConsulCluster.class).in(Singleton.class);
+        bind(Short.class).annotatedWith(MyNodeId.class).toProvider(MyNodeIdProvider.class).in(Singleton.class);
     }
 }

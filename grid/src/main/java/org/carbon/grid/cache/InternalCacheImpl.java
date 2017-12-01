@@ -16,16 +16,20 @@
 
 package org.carbon.grid.cache;
 
+import com.google.inject.Inject;
 import com.google.inject.Provider;
+import com.google.inject.Singleton;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import org.carbon.grid.CarbonGrid;
+import org.carbon.grid.cluster.MyNodeId;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.Random;
@@ -56,6 +60,7 @@ import java.util.concurrent.TimeoutException;
  * - resilient memory across nodes (striping, backups, ...)
  *
  */
+@Singleton
 class InternalCacheImpl implements InternalCache {
     private final static Logger logger = LoggerFactory.getLogger(InternalCacheImpl.class);
     // pseudo unique cache line id generator
@@ -74,7 +79,8 @@ class InternalCacheImpl implements InternalCache {
 
     private final static int TIMEOUT_SECS = 555;
 
-    InternalCacheImpl(Provider<Short> myNodeIdProvider, CarbonGrid.ServerConfig serverConfig) {
+    @Inject
+    InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.ServerConfig serverConfig) {
         this.myNodeIdProvider = myNodeIdProvider;
         comms = new GridCommunications(myNodeIdProvider, serverConfig, this);
     }
@@ -128,6 +134,11 @@ class InternalCacheImpl implements InternalCache {
             default:
                 throw new RuntimeException("Unknown type " + request.type);
         }
+    }
+
+    @Override
+    public void handlePeerChange(short nodeId, InetSocketAddress addr) {
+        comms.addPeer(nodeId, addr);
     }
 
     private void preHandler(Message msg) {

@@ -14,14 +14,16 @@
  * limitations under the License.
  */
 
-package org.carbon.grid.cache;
+package org.carbon.grid.cluster;
 
-import com.google.inject.AbstractModule;
-import com.google.inject.Singleton;
+import com.google.inject.BindingAnnotation;
 
-public class CacheModule extends AbstractModule {
-    @Override
-    protected void configure() {
-        bind(InternalCache.class).to(InternalCacheImpl.class).in(Singleton.class);
-    }
-}
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.FIELD, ElementType.PARAMETER})
+@BindingAnnotation
+public @interface MyNodeId {}

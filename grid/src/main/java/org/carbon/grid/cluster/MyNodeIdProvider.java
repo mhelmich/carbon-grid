@@ -14,14 +14,23 @@
  * limitations under the License.
  */
 
-package org.carbon.grid.cache;
+package org.carbon.grid.cluster;
 
-import com.google.inject.AbstractModule;
+import com.google.inject.Inject;
+import com.google.inject.Provider;
 import com.google.inject.Singleton;
 
-public class CacheModule extends AbstractModule {
+@Singleton
+public class MyNodeIdProvider implements Provider<Short> {
+    private final Cluster cluster;
+
+    @Inject
+    MyNodeIdProvider(Cluster cluster) {
+        this.cluster = cluster;
+    }
+
     @Override
-    protected void configure() {
-        bind(InternalCache.class).to(InternalCacheImpl.class).in(Singleton.class);
+    public Short get() {
+        return cluster.myNodeId();
     }
 }

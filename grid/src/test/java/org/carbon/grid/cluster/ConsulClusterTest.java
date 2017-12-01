@@ -49,23 +49,23 @@ public class ConsulClusterTest {
     @Test
     public void testRegister() throws IOException {
         try (ConsulCluster cluster = new ConsulCluster(9999, emptyPeerHandler)) {
-            assertEquals(String.valueOf(ConsulCluster.MIN_NODE_ID), cluster.myNodeId);
+            assertEquals(ConsulCluster.MIN_NODE_ID, cluster.myNodeId());
         }
     }
 
     @Test
     public void testRegisterMultipleClusters() throws IOException {
-        Set<String> nodeIds = new HashSet<String>() {{
-            add(String.valueOf(ConsulCluster.MIN_NODE_ID));
-            add(String.valueOf(ConsulCluster.MIN_NODE_ID + 1));
-            add(String.valueOf(ConsulCluster.MIN_NODE_ID + 2));
+        Set<Short> nodeIds = new HashSet<Short>() {{
+            add(ConsulCluster.MIN_NODE_ID);
+            add((short) (ConsulCluster.MIN_NODE_ID + 1));
+            add((short) (ConsulCluster.MIN_NODE_ID + 2));
         }};
         try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler)) {
             try (ConsulCluster cluster456 = new ConsulCluster(8888, emptyPeerHandler)) {
                 try (ConsulCluster cluster789 = new ConsulCluster(9999, emptyPeerHandler)) {
-                    assertTrue(nodeIds.remove(cluster123.myNodeId));
-                    assertTrue(nodeIds.remove(cluster456.myNodeId));
-                    assertTrue(nodeIds.remove(cluster789.myNodeId));
+                    assertTrue(nodeIds.remove(cluster123.myNodeId()));
+                    assertTrue(nodeIds.remove(cluster456.myNodeId()));
+                    assertTrue(nodeIds.remove(cluster789.myNodeId()));
                 }
             }
         }
@@ -105,7 +105,7 @@ public class ConsulClusterTest {
                                 return nodeId;
                             }
                         }) {
-                            assertEquals("506", cluster123.myNodeId);
+                            assertEquals((short)506, cluster123.myNodeId());
                         } catch (IOException e) {
                             fail();
                         }
@@ -122,7 +122,7 @@ public class ConsulClusterTest {
                                 return s;
                             }
                         }) {
-                            assertEquals("503", cluster456.myNodeId);
+                            assertEquals((short)503, cluster456.myNodeId());
                         } catch (IOException e) {
                             fail();
                         }
@@ -151,9 +151,9 @@ public class ConsulClusterTest {
                 try (ConsulCluster cluster789 = new ConsulCluster(9999, emptyPeerHandler)) {
                     Map<Short, InetSocketAddress> nodesToAddr = cluster123.getHealthyNodes();
                     assertEquals(3, nodesToAddr.size());
-                    assertTrue(nodesToAddr.containsKey(Short.valueOf(cluster123.myNodeId)));
-                    assertTrue(nodesToAddr.containsKey(Short.valueOf(cluster456.myNodeId)));
-                    assertTrue(nodesToAddr.containsKey(Short.valueOf(cluster789.myNodeId)));
+                    assertTrue(nodesToAddr.containsKey(cluster123.myNodeId()));
+                    assertTrue(nodesToAddr.containsKey(cluster456.myNodeId()));
+                    assertTrue(nodesToAddr.containsKey(cluster789.myNodeId()));
                 }
             }
         }
