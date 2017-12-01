@@ -116,16 +116,16 @@ public final class CarbonGrid implements Closeable {
 
         @Override
         protected void configure() {
-            bind(CarbonGridServerConfig.class).toInstance(configProvider.bind("server", CarbonGridServerConfig.class));
-            bind(CarbonGridConsulConfig.class).toInstance(configProvider.bind("consul", CarbonGridConsulConfig.class));
+            bind(ServerConfig.class).toInstance(configProvider.bind("server", ServerConfig.class));
+            bind(ConsulConfig.class).toInstance(configProvider.bind("consul", ConsulConfig.class));
         }
     }
 
-    public interface CarbonGridServerConfig {
+    public interface ServerConfig {
         Integer port();
     }
 
-    public interface CarbonGridConsulConfig {
+    public interface ConsulConfig {
         String host();
         Integer port();
     }
