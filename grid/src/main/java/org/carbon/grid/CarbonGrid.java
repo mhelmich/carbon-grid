@@ -124,6 +124,7 @@ public final class CarbonGrid implements Closeable {
 
     public interface ServerConfig {
         Integer port();
+        Integer timeout();
     }
 
     public interface ConsulConfig {

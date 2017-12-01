@@ -111,11 +111,11 @@ class GridCommunications implements Closeable {
 
     private final AtomicInteger sequence = new AtomicInteger(new Random().nextInt());
 
-    private final int myServerPort;
     private final Provider<Short> myNodeIdProvider;
     private short myNodeId = -1;
     private final TcpGridServer tcpGridServer;
     private final InternalCache internalCache;
+    private final CarbonGrid.ServerConfig serverConfig;
 
     GridCommunications(Provider<Short> myNodeIdProvider, CarbonGrid.ServerConfig serverConfig, InternalCache internalCache) {
         this.myNodeIdProvider = myNodeIdProvider;
@@ -125,7 +125,7 @@ class GridCommunications implements Closeable {
                 workerGroup,
                 this::handleMessage
         );
-        this.myServerPort = serverConfig.port();
+        this.serverConfig = serverConfig;
         this.internalCache = internalCache;
     }
 
@@ -418,8 +418,8 @@ class GridCommunications implements Closeable {
         messageIdToLatchAndMessage.clear();
         cacheLineIdToBacklog.clear();
         try {
-            workerShutdownFuture.get(1, TimeUnit.MINUTES);
-            bossShutdownFuture.get(5, TimeUnit.SECONDS);
+            workerShutdownFuture.get(serverConfig.timeout(), TimeUnit.SECONDS);
+            bossShutdownFuture.get(serverConfig.timeout(), TimeUnit.SECONDS);
         } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
             throw new IOException(xcp);
         }
@@ -438,7 +438,7 @@ class GridCommunications implements Closeable {
 
     @Override
     public String toString () {
-        return "myNodeId: " + myNodeId() + " myServerPort: " + myServerPort;
+        return "myNodeId: " + myNodeId() + " myServerPort: " + serverConfig.port();
     }
 
     static class LatchAndMessage {

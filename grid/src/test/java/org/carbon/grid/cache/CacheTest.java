@@ -418,6 +418,7 @@ public class CacheTest {
     private CarbonGrid.ServerConfig mockServerConfig(int port) {
         CarbonGrid.ServerConfig sc = Mockito.mock(CarbonGrid.ServerConfig.class);
         when(sc.port()).thenReturn(port);
+        when(sc.timeout()).thenReturn(60);
         return sc;
     }
 

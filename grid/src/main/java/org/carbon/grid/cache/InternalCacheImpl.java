@@ -76,13 +76,13 @@ class InternalCacheImpl implements InternalCache {
     final GridCommunications comms;
     private final Provider<Short> myNodeIdProvider;
     private short myNodeId = -1;
-
-    private final static int TIMEOUT_SECS = 555;
+    private final CarbonGrid.ServerConfig serverConfig;
 
     @Inject
     InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.ServerConfig serverConfig) {
         this.myNodeIdProvider = myNodeIdProvider;
-        comms = new GridCommunications(myNodeIdProvider, serverConfig, this);
+        this.serverConfig = serverConfig;
+        this.comms = new GridCommunications(myNodeIdProvider, serverConfig, this);
     }
 
     @Override
@@ -497,7 +497,7 @@ class InternalCacheImpl implements InternalCache {
         Message.GETX getx = new Message.GETX(myNodeId(), lineId);
         Future<Void> getxFuture = innerGenericGetLineRemotely(getx);
         try {
-            getxFuture.get(TIMEOUT_SECS, TimeUnit.SECONDS);
+            getxFuture.get(serverConfig.timeout(), TimeUnit.SECONDS);
         } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
             throw new IOException(xcp);
         }
@@ -509,7 +509,7 @@ class InternalCacheImpl implements InternalCache {
             CompletableFuture<Void> invalidateFuture = comms.send(line.getSharers(), new Message.INV(myNodeId(), lineId));
 
             try {
-                invalidateFuture.get(TIMEOUT_SECS, TimeUnit.SECONDS);
+                invalidateFuture.get(serverConfig.timeout(), TimeUnit.SECONDS);
             } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
                 throw new IOException(xcp);
             }
@@ -522,7 +522,7 @@ class InternalCacheImpl implements InternalCache {
         Message.GET get = new Message.GET(myNodeId(), lineId);
         Future<Void> getFuture = innerGenericGetLineRemotely(get);
         try {
-            getFuture.get(TIMEOUT_SECS, TimeUnit.SECONDS);
+            getFuture.get(serverConfig.timeout(), TimeUnit.SECONDS);
         } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
             throw new IOException(xcp);
         }

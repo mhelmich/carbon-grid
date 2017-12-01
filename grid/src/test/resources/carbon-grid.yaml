@@ -1,6 +1,7 @@
 # test config
 server:
     port: 4567
+    timeout: 60
 consul:
     host: "localhost"
     port: 8500
