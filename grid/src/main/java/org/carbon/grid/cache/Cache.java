@@ -20,7 +20,6 @@ import io.netty.buffer.ByteBuf;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 
 /**
  * The interface to the in-memory cache.
@@ -30,11 +29,9 @@ public interface Cache extends Closeable {
     ByteBuf allocateBuffer(int capacity);
     long allocateEmpty(Transaction txn) throws IOException;
     long allocateWithData(ByteBuf buffer, Transaction txn) throws IOException;
-    long allocateWithData(ByteBuffer buffer, Transaction txn) throws IOException;
     long allocateWithData(byte[] bytes, Transaction txn) throws IOException;
     ByteBuf get(long lineId) throws IOException;
     ByteBuf getx(long lineId, Transaction txn) throws IOException;
     void put(long lineId, ByteBuf buffer, Transaction txn) throws IOException;
-    void put(long lineId, ByteBuffer buffer, Transaction txn) throws IOException;
     Transaction newTransaction();
 }

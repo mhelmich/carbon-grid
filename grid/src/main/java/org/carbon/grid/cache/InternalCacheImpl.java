@@ -21,7 +21,6 @@ import com.google.inject.Provider;
 import com.google.inject.Singleton;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.buffer.Unpooled;
 import org.carbon.grid.CarbonGrid;
 import org.carbon.grid.cluster.GloballyUniqueIdAllocator;
 import org.carbon.grid.cluster.MyNodeId;
@@ -31,7 +30,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -413,11 +411,6 @@ class InternalCacheImpl implements InternalCache {
     }
 
     @Override
-    public long allocateWithData(ByteBuffer buffer, Transaction txn) throws IOException {
-        return allocateWithData(Unpooled.wrappedBuffer(buffer), txn);
-    }
-
-    @Override
     public long allocateWithData(byte[] bites, Transaction txn) throws IOException {
         ByteBuf buffer = allocateBuffer(bites.length).writeBytes(bites);
         return allocateWithData(buffer, txn);
@@ -472,11 +465,6 @@ class InternalCacheImpl implements InternalCache {
         line.lock();
         t.recordUndo(line, buffer);
         buffer.retain();
-    }
-
-    @Override
-    public void put(long lineId, ByteBuffer buffer, Transaction txn) throws IOException {
-        put(lineId, Unpooled.wrappedBuffer(buffer), txn);
     }
 
     @Override
