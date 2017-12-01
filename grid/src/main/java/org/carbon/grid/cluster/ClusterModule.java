@@ -23,6 +23,11 @@ public class ClusterModule extends AbstractModule {
     @Override
     protected void configure() {
         bind(Cluster.class).to(ConsulCluster.class).in(Singleton.class);
+        // this is ... well ... boiler plate code
+        // it resolves a cyclic dependency between cluster and cache
+        // to get around the cycle of death, I'm injecting a provider for the id
+        // of the current node
+        // the cache will access the provider only when the id is needed as opposed to during object creation
         bind(Short.class).annotatedWith(MyNodeId.class).toProvider(MyNodeIdProvider.class).in(Singleton.class);
     }
 }

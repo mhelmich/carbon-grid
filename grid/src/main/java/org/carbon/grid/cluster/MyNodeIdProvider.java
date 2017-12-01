@@ -20,6 +20,10 @@ import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.inject.Singleton;
 
+/**
+ * This is somewhat boiler plate code to resolve a cyclic dependency between
+ * the cluster and the cache.
+ */
 @Singleton
 public class MyNodeIdProvider implements Provider<Short> {
     private final Cluster cluster;
