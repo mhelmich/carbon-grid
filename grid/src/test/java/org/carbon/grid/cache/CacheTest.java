@@ -21,6 +21,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.util.internal.SocketUtils;
 import org.carbon.grid.CarbonGrid;
+import org.carbon.grid.cluster.GloballyUniqueIdAllocator;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -29,6 +30,7 @@ import java.util.Arrays;
 import java.util.Random;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -38,6 +40,7 @@ import static org.mockito.Mockito.when;
 
 public class CacheTest {
     private final Random random = new Random();
+    private static final AtomicLong idAllocator = new AtomicLong(0);
 
     @Test
     public void testPingPong() throws IOException, ExecutionException, InterruptedException {
@@ -244,7 +247,7 @@ public class CacheTest {
     }
 
     @Test
-    public void testOwnershipMoveInvalidate() throws IOException, InterruptedException {
+    public void testOwnershipMoveInvalidate() throws IOException {
         ThreeCaches threeCaches = createCluster();
         String testData = "testing_test";
         ByteBuf buffer123 = null;
@@ -412,7 +415,7 @@ public class CacheTest {
     }
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
-        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockServerConfig(port));
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockServerConfig(port), mockIdAllocatorProvider());
     }
 
     private CarbonGrid.ServerConfig mockServerConfig(int port) {
@@ -424,5 +427,9 @@ public class CacheTest {
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {
         return () -> nodeId;
+    }
+
+    private Provider<GloballyUniqueIdAllocator> mockIdAllocatorProvider() {
+        return () -> idAllocator::incrementAndGet;
     }
 }

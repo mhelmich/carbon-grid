@@ -29,5 +29,6 @@ public class ClusterModule extends AbstractModule {
         // of the current node
         // the cache will access the provider only when the id is needed as opposed to during object creation
         bind(Short.class).annotatedWith(MyNodeId.class).toProvider(MyNodeIdProvider.class).in(Singleton.class);
+        bind(GloballyUniqueIdAllocator.class).toProvider(GloballyUniqueIdAllocatorProvider.class).in(Singleton.class);
     }
 }

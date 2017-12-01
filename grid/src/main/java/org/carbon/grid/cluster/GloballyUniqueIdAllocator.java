@@ -16,9 +16,6 @@
 
 package org.carbon.grid.cluster;
 
-import java.io.Closeable;
-
-public interface Cluster extends Closeable {
-    short myNodeId();
-    GloballyUniqueIdAllocator getIdAllocator();
+public interface GloballyUniqueIdAllocator {
+    Long nextUniqueId();
 }

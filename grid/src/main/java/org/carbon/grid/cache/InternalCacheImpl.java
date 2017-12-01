@@ -23,6 +23,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import org.carbon.grid.CarbonGrid;
+import org.carbon.grid.cluster.GloballyUniqueIdAllocator;
 import org.carbon.grid.cluster.MyNodeId;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.slf4j.Logger;
@@ -31,8 +32,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.HashSet;
-import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -63,10 +62,6 @@ import java.util.concurrent.TimeoutException;
 @Singleton
 class InternalCacheImpl implements InternalCache {
     private final static Logger logger = LoggerFactory.getLogger(InternalCacheImpl.class);
-    // pseudo unique cache line id generator
-    // TODO -- the ids need to be globally unique
-    private static Random random = new Random();
-    private static Set<Long> usedIds = new HashSet<>();
 
     // the cache lines I own
     private final NonBlockingHashMapLong<CacheLine> owned = new NonBlockingHashMapLong<>();
@@ -77,11 +72,13 @@ class InternalCacheImpl implements InternalCache {
     private final Provider<Short> myNodeIdProvider;
     private short myNodeId = -1;
     private final CarbonGrid.ServerConfig serverConfig;
+    private final Provider<GloballyUniqueIdAllocator> idAllocatorProvider;
 
     @Inject
-    InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.ServerConfig serverConfig) {
+    InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.ServerConfig serverConfig, Provider<GloballyUniqueIdAllocator> idAllocatorProvider) {
         this.myNodeIdProvider = myNodeIdProvider;
         this.serverConfig = serverConfig;
+        this.idAllocatorProvider = idAllocatorProvider;
         this.comms = new GridCommunications(myNodeIdProvider, serverConfig, this);
     }
 
@@ -364,14 +361,8 @@ class InternalCacheImpl implements InternalCache {
 
 
 
-    // TODO -- this needs more work obviously
     private long nextClusterUniqueCacheLineId() {
-        long newId = random.nextLong();
-        while (usedIds.contains(newId)) {
-            newId = random.nextLong();
-        }
-        usedIds.add(newId);
-        return newId;
+        return idAllocatorProvider.get().nextUniqueId();
     }
 
     @Override

@@ -53,7 +53,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Singleton
@@ -278,7 +277,7 @@ class ConsulCluster implements Cluster {
     }
 
     @Override
-    public Supplier<Long> getIdSupplier() {
+    public GloballyUniqueIdAllocator getIdAllocator() {
         return () -> {
             Long id;
             try {

@@ -18,7 +18,6 @@ package org.carbon.grid;
 
 import org.cfg4j.source.ConfigurationSource;
 import org.cfg4j.source.classpath.ClasspathConfigurationSource;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -28,7 +27,6 @@ import static org.junit.Assert.assertTrue;
 
 public class CarbonGridTest {
     @Test
-    @Ignore // TODO -- fix me
     public void testStartup() throws IOException {
         try (CarbonGrid grid = CarbonGrid.innerStart(getTestConfig())) {
             assertTrue(grid.isUp());

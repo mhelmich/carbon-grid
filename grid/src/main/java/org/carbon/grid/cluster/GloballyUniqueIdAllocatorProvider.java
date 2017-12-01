@@ -16,9 +16,21 @@
 
 package org.carbon.grid.cluster;
 
-import java.io.Closeable;
+import com.google.inject.Inject;
+import com.google.inject.Provider;
+import com.google.inject.Singleton;
 
-public interface Cluster extends Closeable {
-    short myNodeId();
-    GloballyUniqueIdAllocator getIdAllocator();
+@Singleton
+class GloballyUniqueIdAllocatorProvider implements Provider<GloballyUniqueIdAllocator> {
+    private final Cluster cluster;
+
+    @Inject
+    GloballyUniqueIdAllocatorProvider(Cluster cluster) {
+        this.cluster = cluster;
+    }
+
+    @Override
+    public GloballyUniqueIdAllocator get() {
+        return cluster.getIdAllocator();
+    }
 }

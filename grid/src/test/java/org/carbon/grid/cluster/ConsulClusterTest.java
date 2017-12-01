@@ -35,7 +35,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
-import java.util.function.Supplier;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -74,7 +73,7 @@ public class ConsulClusterTest {
     }
 
     @Test
-    public void testRegisterConcurrent() throws IOException {
+    public void testRegisterConcurrent() {
         Consul consul = Consul.builder()
                 .withHostAndPort(HostAndPort.fromParts("localhost", 8500))
                 .build();
@@ -139,16 +138,18 @@ public class ConsulClusterTest {
         try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler)) {
             Pair<Long, Long> chunk = cluster123.allocateIds(1);
             assertEquals(chunk.getLeft() + 1L, chunk.getRight().longValue());
-            Supplier<Long> idSupplier = cluster123.getIdSupplier();
-            assertNotNull(idSupplier.get());
+            GloballyUniqueIdAllocator idSupplier = cluster123.getIdAllocator();
+            assertNotNull(idSupplier.nextUniqueId());
         }
     }
 
     @Test
-    public void testGetHealthyNodes() throws IOException {
+    public void testGetHealthyNodes() throws IOException, InterruptedException {
         try (ConsulCluster cluster123 = new ConsulCluster(7777, emptyPeerHandler)) {
             try (ConsulCluster cluster456 = new ConsulCluster(8888, emptyPeerHandler)) {
                 try (ConsulCluster cluster789 = new ConsulCluster(9999, emptyPeerHandler)) {
+                    // TODO -- Test.flap()
+                    Thread.sleep(500);
                     Map<Short, InetSocketAddress> nodesToAddr = cluster123.getHealthyNodes();
                     assertEquals(3, nodesToAddr.size());
                     assertTrue(nodesToAddr.containsKey(cluster123.myNodeId()));

@@ -20,6 +20,7 @@ import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import org.carbon.grid.CarbonGrid;
+import org.carbon.grid.cluster.GloballyUniqueIdAllocator;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.junit.AfterClass;
 import org.junit.Test;
@@ -30,6 +31,7 @@ import java.lang.reflect.Field;
 import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -38,6 +40,7 @@ import static org.mockito.Mockito.when;
 public class TransactionTest {
     private static final Set<ByteBuf> buffers = new HashSet<>();
     private final Random random = new Random();
+    private static final AtomicLong idAllocator = new AtomicLong(0);
 
     @Test
     public void testCommitExistingLine() throws IOException, NoSuchFieldException, IllegalAccessException {
@@ -144,7 +147,7 @@ public class TransactionTest {
     }
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
-        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockServerConfig(port));
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockServerConfig(port), mockIdAllocatorProvider());
     }
 
     private CarbonGrid.ServerConfig mockServerConfig(int port) {
@@ -156,5 +159,9 @@ public class TransactionTest {
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {
         return () -> nodeId;
+    }
+
+    private Provider<GloballyUniqueIdAllocator> mockIdAllocatorProvider() {
+        return () -> idAllocator::incrementAndGet;
     }
 }
