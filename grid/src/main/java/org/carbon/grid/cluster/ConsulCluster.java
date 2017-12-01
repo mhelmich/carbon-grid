@@ -263,6 +263,11 @@ class ConsulCluster implements Cluster {
     }
 
     @Override
+    public short getMyNodeId() {
+        return Short.valueOf(myNodeId);
+    }
+
+    @Override
     public Supplier<Long> getIdSupplier() {
         return () -> {
             Long id;

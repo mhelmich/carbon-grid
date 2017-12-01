@@ -25,5 +25,6 @@ public interface Cluster extends Closeable {
         REMOVE,
     }
 
+    short getMyNodeId();
     Supplier<Long> getIdSupplier();
 }
