@@ -37,8 +37,13 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public final class CarbonGrid implements Closeable {
+    // you can have multiple grids inside the same JVM
+    // the key into the map is a hash code (currently) on a config source
     private static final NonBlockingHashMap<Integer, CarbonGrid> hashToGrid = new NonBlockingHashMap<>();
 
+    /**
+     * Start carbon grid and leave to itself to find configurations.
+     */
     public static CarbonGrid start() throws CarbonGridException {
         ConfigurationSource cs = new ClasspathConfigurationSource(
                 () -> Paths.get("carbon-grid.yaml")
@@ -47,11 +52,17 @@ public final class CarbonGrid implements Closeable {
         return innerStart(cs);
     }
 
+    /**
+     * Start carbon grid and point it to the config file it is supposed to load.
+     */
     public static CarbonGrid start(Path configFile) throws CarbonGridException {
         ConfigurationSource cs = new ClasspathConfigurationSource(() -> configFile);
         return innerStart(cs);
     }
 
+    /**
+     * Start carbon grid and point it to the config file it is supposed to load.
+     */
     public static CarbonGrid start(File configFile) throws CarbonGridException {
         return start(configFile.toPath());
     }
@@ -112,6 +123,9 @@ public final class CarbonGrid implements Closeable {
         shutdownGracefully();
     }
 
+    /**
+     * This module publishes all config objects to guice consumers.
+     */
     static class ConfigModule extends AbstractModule {
         private final ConfigurationProvider configProvider;
 
@@ -126,6 +140,11 @@ public final class CarbonGrid implements Closeable {
         }
     }
 
+    //////////////////////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////
+    /////////////////////////////////////////////
+    // These interfaces are definitions of the config
+    // we expect to see
     public interface ServerConfig {
         Integer port();
         Integer timeout();

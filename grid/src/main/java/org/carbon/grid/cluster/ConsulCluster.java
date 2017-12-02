@@ -77,6 +77,8 @@ class ConsulCluster implements Cluster {
     private final AtomicLong highWaterMarkCacheLineId = new AtomicLong(0);
     private final ServiceHealthCache shCache;
     private final String myNodeId;
+    // a boolean caching the up state of this node
+    // this is determined by the regular session renewals that each node does
     private final AtomicBoolean isUp = new AtomicBoolean(false);
     // counts how often consul can't be reached during regular checkins
     private final AtomicInteger consulCheckinFailureCounter = new AtomicInteger(0);
@@ -210,11 +212,13 @@ class ConsulCluster implements Cluster {
                         consulCheckinFailureCounter.incrementAndGet();
                         logger.error("", xcp);
                         if (consulCheckinFailureCounter.get() >= consulConfig.numCheckinFailuresToShutdown()) {
+                            // TODO -- drop death pill and hover lurking for a connection
                             isUp.set(false);
                         }
                     }
                 },
                 0L,
+                // give this job two chances to reach out to consul to ping healthy
                 consulConfig.timeout() / 2,
                 TimeUnit.SECONDS
         );
@@ -227,11 +231,13 @@ class ConsulCluster implements Cluster {
                         consulCheckinFailureCounter.incrementAndGet();
                         logger.error("", xcp);
                         if (consulCheckinFailureCounter.get() >= consulConfig.numCheckinFailuresToShutdown()) {
+                            // TODO -- drop death pill and hover lurking for a connection
                             isUp.set(false);
                         }
                     }
                 },
                 0L,
+                // give this job two chances to reach out to consul to ping healthy
                 consulConfig.timeout() / 2,
                 TimeUnit.SECONDS
         );
