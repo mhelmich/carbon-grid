@@ -6,3 +6,4 @@ consul:
     host: "localhost"
     port: 8500
     timeout: 10
+    numCheckinFailuresToShutdown: 3

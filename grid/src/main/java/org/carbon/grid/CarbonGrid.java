@@ -39,7 +39,7 @@ import java.nio.file.Paths;
 public final class CarbonGrid implements Closeable {
     private static final NonBlockingHashMap<Integer, CarbonGrid> hashToGrid = new NonBlockingHashMap<>();
 
-    public static CarbonGrid start() {
+    public static CarbonGrid start() throws CarbonGridException {
         ConfigurationSource cs = new ClasspathConfigurationSource(
                 () -> Paths.get("carbon-grid.yaml")
         );
@@ -47,12 +47,12 @@ public final class CarbonGrid implements Closeable {
         return innerStart(cs);
     }
 
-    public static CarbonGrid start(Path configFile) {
+    public static CarbonGrid start(Path configFile) throws CarbonGridException {
         ConfigurationSource cs = new ClasspathConfigurationSource(() -> configFile);
         return innerStart(cs);
     }
 
-    public static CarbonGrid start(File configFile) {
+    public static CarbonGrid start(File configFile) throws CarbonGridException {
         return start(configFile.toPath());
     }
 
@@ -76,14 +76,18 @@ public final class CarbonGrid implements Closeable {
     }
 
     private void createInjector(ConfigurationProvider configProvider) {
-        injector = Guice.createInjector(
-                new ConfigModule(configProvider),
-                new ClusterModule(),
-                new CacheModule()
-        );
+        try {
+            injector = Guice.createInjector(
+                    new ConfigModule(configProvider),
+                    new ClusterModule(),
+                    new CacheModule()
+            );
 
-        cluster = injector.getInstance(Cluster.class);
-        cache = injector.getInstance(InternalCache.class);
+            cluster = injector.getInstance(Cluster.class);
+            cache = injector.getInstance(InternalCache.class);
+        } catch (Exception xcp) {
+            throw new CarbonGridException(xcp);
+        }
     }
 
     public void shutdownGracefully() throws IOException {
@@ -131,5 +135,6 @@ public final class CarbonGrid implements Closeable {
         String host();
         Integer port();
         Integer timeout();
+        Integer numCheckinFailuresToShutdown();
     }
 }

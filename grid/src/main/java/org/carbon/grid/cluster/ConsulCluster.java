@@ -51,6 +51,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
@@ -58,9 +59,9 @@ import java.util.stream.Collectors;
 @Singleton
 class ConsulCluster implements Cluster {
     private final static Logger logger = LoggerFactory.getLogger(ConsulCluster.class);
-    private final static String NODE_ID_KEY_PREFIX = "node-ids/node-id-";
-    private final static String CACHE_LINE_ID_KEY = "cache-lines/running-cache-line-id";
     private final static String serviceName = "carbon-grid";
+    private final static String NODE_ID_KEY_PREFIX = serviceName + "/cluster/node-ids/node-id-";
+    private final static String CACHE_LINE_ID_KEY = serviceName + "/cluster/cache-lines/running-cache-line-id";
     private final static int NUM_RETRIES = 10;
     private final static int ID_CHUNK_SIZE = 100;
     final static short MIN_NODE_ID = 500;
@@ -77,6 +78,8 @@ class ConsulCluster implements Cluster {
     private final ServiceHealthCache shCache;
     private final String myNodeId;
     private final AtomicBoolean isUp = new AtomicBoolean(false);
+    // counts how often consul can't be reached during regular checkins
+    private final AtomicInteger consulCheckinFailureCounter = new AtomicInteger(0);
 
     @Inject
     ConsulCluster(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig, PeerChangeConsumer peerChangeConsumer) {
@@ -89,7 +92,7 @@ class ConsulCluster implements Cluster {
         this.myNodeId = findMyNodeId();
         // this method internally uses the executor service
         // beware to create the thing before calling into register
-        registerMyself(serverConfig.port(), consulConfig.timeout());
+        registerMyself(serverConfig.port(), consulConfig);
         setDefaultCacheLineIdSeed();
         fireUpIdAllocator();
         this.shCache = attachToChanges(peerChangeConsumer);
@@ -158,7 +161,7 @@ class ConsulCluster implements Cluster {
 
     private void setDefaultCacheLineIdSeed() {
         if (!consul.keyValueClient().putValue(CACHE_LINE_ID_KEY, String.valueOf(Long.MIN_VALUE), 0L, ImmutablePutOptions.builder().cas(0L).build())) {
-            logger.warn("Cache line id seed was present already");
+            logger.warn("Cache line id seed was already present");
         }
     }
 
@@ -195,8 +198,8 @@ class ConsulCluster implements Cluster {
     }
 
     // register two scheduled jobs that keep refreshing the session and the service health check
-    private void registerMyself(int myServicePort, int consulTimeout) {
-        consul.agentClient().register(myServicePort, consulTimeout, serviceName, myNodeId);
+    private void registerMyself(int myServicePort, CarbonGrid.ConsulConfig consulConfig) {
+        consul.agentClient().register(myServicePort, consulConfig.timeout(), serviceName, myNodeId);
         executorService.scheduleAtFixedRate(
                 () -> {
                     try {
@@ -204,12 +207,15 @@ class ConsulCluster implements Cluster {
                     } catch (NotRegisteredException xcp) {
                         throw new RuntimeException(xcp);
                     } catch (Exception xcp) {
+                        consulCheckinFailureCounter.incrementAndGet();
                         logger.error("", xcp);
-                        isUp.set(false);
+                        if (consulCheckinFailureCounter.get() >= consulConfig.numCheckinFailuresToShutdown()) {
+                            isUp.set(false);
+                        }
                     }
                 },
                 0L,
-                consulTimeout / 2,
+                consulConfig.timeout() / 2,
                 TimeUnit.SECONDS
         );
 
@@ -218,12 +224,15 @@ class ConsulCluster implements Cluster {
                     try {
                         consul.sessionClient().renewSession(consulSessionId);
                     } catch (Exception xcp) {
+                        consulCheckinFailureCounter.incrementAndGet();
                         logger.error("", xcp);
-                        isUp.set(false);
+                        if (consulCheckinFailureCounter.get() >= consulConfig.numCheckinFailuresToShutdown()) {
+                            isUp.set(false);
+                        }
                     }
                 },
                 0L,
-                consulTimeout / 2,
+                consulConfig.timeout() / 2,
                 TimeUnit.SECONDS
         );
     }
