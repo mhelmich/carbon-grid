@@ -56,12 +56,24 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
+/**
+ * Explain how things work:
+ * - globally unique ids for cache lines
+ * - node id allocation
+ * - health checks
+ * - service registrations
+ * - node info and what it looks like
+ * - changes in node upness (and the listener and its consumer)
+ * - death pills
+ * - and how I hope that master-replica allocation will work
+ */
 @Singleton
 class ConsulCluster implements Cluster {
     private final static Logger logger = LoggerFactory.getLogger(ConsulCluster.class);
     private final static String serviceName = "carbon-grid";
     private final static String NODE_ID_KEY_PREFIX = serviceName + "/cluster/node-ids/node-id-";
     private final static String CACHE_LINE_ID_KEY = serviceName + "/cluster/cache-lines/running-cache-line-id";
+//    private final static String NODE_INFO_KEY_PREFIX = serviceName + "/cluster/node-info/";
     private final static int NUM_RETRIES = 10;
     private final static int ID_CHUNK_SIZE = 100;
     final static short MIN_NODE_ID = 500;
@@ -85,6 +97,8 @@ class ConsulCluster implements Cluster {
 
     @Inject
     ConsulCluster(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig, PeerChangeConsumer peerChangeConsumer) {
+        // this executor service that runs all sorts little threads
+        // id allocation, health checks
         this.executorService = Executors.newScheduledThreadPool(3, new DefaultThreadFactory("consul-session-group"));
         this.consul = Consul.builder()
                 .withHostAndPort(HostAndPort.fromParts(consulConfig.host(), consulConfig.port()))
@@ -278,6 +292,7 @@ class ConsulCluster implements Cluster {
                         int numIdsToAllocate = Math.min(nextCacheLineIds.remainingCapacity(), ID_CHUNK_SIZE);
                         Pair<Long, Long> idChunk = allocateIds(numIdsToAllocate);
                         highWaterMarkCacheLineId.set(idChunk.getRight());
+                        // all of these ids go into the id queue now
                         for (long i = idChunk.getLeft(); i < idChunk.getRight(); i++) {
                             nextCacheLineIds.offer(i);
                         }
