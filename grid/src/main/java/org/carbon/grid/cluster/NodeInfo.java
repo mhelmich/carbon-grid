@@ -29,27 +29,27 @@ public class NodeInfo implements Serializable {
     private final static String SET_SEPARATOR = ",";
     final short nodeId;
     // tri-state boolean => true, false, null are meaningful values
-    final Boolean isMaster;
+    final Boolean isLeader;
     final Set<Short> replicaIds;
-    final short masterId;
+    final short leaderId;
 
     NodeInfo(String s) {
         String[] tokens = s.split(SEPARATOR);
         assert tokens.length == 3;
         this.nodeId = Short.valueOf(tokens[0]);
-        // isMaster can't be null as we have 3 tokens
-        this.isMaster = Boolean.valueOf(tokens[1]);
-        if (isMaster) {
+        // isLeader can't be null as we have 3 tokens
+        this.isLeader = Boolean.valueOf(tokens[1]);
+        if (isLeader) {
             String[] replicaIdsStr = tokens[2].split(SET_SEPARATOR);
             Set<Short> replicaIdsTmp = new HashSet<>(replicaIdsStr.length);
             for (String idStr : replicaIdsStr) {
                 replicaIdsTmp.add(Short.valueOf(idStr));
             }
             this.replicaIds = ImmutableSet.copyOf(replicaIdsTmp);
-            this.masterId = -1;
+            this.leaderId = -1;
         } else {
             this.replicaIds = Collections.emptySet();
-            this.masterId = Short.valueOf(tokens[2]);
+            this.leaderId = Short.valueOf(tokens[2]);
         }
     }
 
@@ -61,26 +61,26 @@ public class NodeInfo implements Serializable {
         this(nodeId, true, replicaIds, (short)-1);
     }
 
-    NodeInfo(short nodeId, short masterId) {
-        this(nodeId, false, Collections.emptySet(), masterId);
+    NodeInfo(short nodeId, short leaderId) {
+        this(nodeId, false, Collections.emptySet(), leaderId);
     }
 
-    private NodeInfo(short nodeId, Boolean isMaster, Set<Short> replicaIds, short masterId) {
+    private NodeInfo(short nodeId, Boolean isLeader, Set<Short> replicaIds, short leaderId) {
         this.nodeId = nodeId;
-        this.isMaster = isMaster;
+        this.isLeader = isLeader;
         this.replicaIds = ImmutableSet.copyOf(replicaIds);
-        this.masterId = masterId;
+        this.leaderId = leaderId;
     }
 
     String toConsulValue() {
         StringBuilder sb = new StringBuilder();
-        sb.append(nodeId).append(SEPARATOR).append(isMaster).append(SEPARATOR);
-        if (isMaster == null) {
-            throw new IllegalStateException("Can't publish node info with isMaster == null");
-        } else if (isMaster) {
+        sb.append(nodeId).append(SEPARATOR).append(isLeader).append(SEPARATOR);
+        if (isLeader == null) {
+            throw new IllegalStateException("Can't publish node info with isLeader == null");
+        } else if (isLeader) {
             sb.append(StringUtils.join(replicaIds, SET_SEPARATOR));
         } else {
-            sb.append(masterId);
+            sb.append(leaderId);
         }
         return sb.toString();
     }

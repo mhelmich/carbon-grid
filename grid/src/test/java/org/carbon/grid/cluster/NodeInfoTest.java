@@ -56,8 +56,8 @@ public class NodeInfoTest {
 
     private void assertEqualsNodeInfo(NodeInfo ni1, NodeInfo ni2) {
         assertEquals(ni1.nodeId, ni2.nodeId);
-        assertEquals(ni1.isMaster, ni2.isMaster);
+        assertEquals(ni1.isLeader, ni2.isLeader);
         assertEquals(ni1.replicaIds, ni2.replicaIds);
-        assertEquals(ni1.masterId, ni2.masterId);
+        assertEquals(ni1.leaderId, ni2.leaderId);
     }
 }
