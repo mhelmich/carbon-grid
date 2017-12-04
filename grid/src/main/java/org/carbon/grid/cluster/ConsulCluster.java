@@ -107,10 +107,10 @@ class ConsulCluster implements Cluster {
         this.consulSessionId = createConsulSession(consulConfig);
         this.myNodeId = reserveMyNodeId();
         this.shCache = attachToChanges(peerChangeConsumer);
-        start(serverConfig, consulConfig);
+        finishBootstrappingCluster(serverConfig, consulConfig);
     }
 
-    private void start(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig) {
+    private void finishBootstrappingCluster(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig) {
         // this method internally uses the executor service
         // beware to create the thing before calling into register
         registerMyself(serverConfig.port(), consulConfig);

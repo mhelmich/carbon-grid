@@ -22,6 +22,10 @@ import com.google.inject.Singleton;
 import java.net.InetSocketAddress;
 import java.util.Map;
 
+/**
+ * The only purpose for this class to exist is to not have references of the cache to appear in cluster code.
+ * A circular dependency injection problem makes this boiler place code necessary :/
+ */
 @Singleton
 class PeerChangeConsumerImpl implements PeerChangeConsumer {
     private final InternalCache cache;
