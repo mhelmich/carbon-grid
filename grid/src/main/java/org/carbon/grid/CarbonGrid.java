@@ -29,6 +29,8 @@ import org.cfg4j.provider.ConfigurationProviderBuilder;
 import org.cfg4j.source.ConfigurationSource;
 import org.cfg4j.source.classpath.ClasspathConfigurationSource;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.File;
@@ -37,14 +39,36 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public final class CarbonGrid implements Closeable {
+    private final static Logger logger = LoggerFactory.getLogger(CarbonGrid.class);
     // you can have multiple grids inside the same JVM
     // the key into the map is a hash code (currently) on a config source
     private static final NonBlockingHashMap<Integer, CarbonGrid> hashToGrid = new NonBlockingHashMap<>();
+
+    private static void printUsage() {
+        logger.error("Didn't provide a valid command line!");
+        logger.error("java -jar carbon-grid.jar server <path-to-config-file>");
+    }
+
+    public static void main(String[] args) {
+        if (args.length != 2) {
+            printUsage();
+            return;
+        }
+
+        if (!"server".equals(args[0])) {
+            printUsage();
+            return;
+        }
+
+        // TODO -- build stand-alone server start method
+        start();
+    }
 
     /**
      * Start carbon grid and leave to itself to find configurations.
      */
     public static CarbonGrid start() throws CarbonGridException {
+        logger.info("Searching for carbon-grid.yaml on the class path");
         ConfigurationSource cs = new ClasspathConfigurationSource(
                 () -> Paths.get("carbon-grid.yaml")
         );
@@ -56,6 +80,7 @@ public final class CarbonGrid implements Closeable {
      * Start carbon grid and point it to the config file it is supposed to load.
      */
     public static CarbonGrid start(Path configFile) throws CarbonGridException {
+        logger.info("Searching for config file here: {}", configFile);
         ConfigurationSource cs = new ClasspathConfigurationSource(() -> configFile);
         return innerStart(cs);
     }
