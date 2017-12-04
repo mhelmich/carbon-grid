@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -81,8 +82,8 @@ class InternalCacheImpl implements InternalCache {
     }
 
     @Override
-    public void handlePeerChange(short nodeId, InetSocketAddress addr) {
-        comms.addPeer(nodeId, addr);
+    public void handlePeerChange(Map<Short, InetSocketAddress> nodeIdToAddr) {
+        comms.setPeers(nodeIdToAddr);
     }
 
     ///////////////////////////////////////

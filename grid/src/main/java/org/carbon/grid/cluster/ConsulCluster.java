@@ -53,19 +53,19 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 /**
- * Explain how things work:
+ * This class takes care of everything that involves global state in the cluster.
+ * That includes:
  * - globally unique ids for cache lines
- * - node id allocation
+ * - cluster-unique node id allocation
  * - health checks
  * - service registrations
  * - node info and what it looks like
  * - changes in node upness (and the listener and its consumer)
  * - death pills
- * - and how I hope that master-replica allocation will work
+ * - leader-replica allocation
  */
 @Singleton
 class ConsulCluster implements Cluster {
@@ -105,13 +105,17 @@ class ConsulCluster implements Cluster {
                 .withExecutorService(executorService)
                 .build();
         this.consulSessionId = createConsulSession(consulConfig);
-        this.myNodeId = findMyNodeId();
+        this.myNodeId = reserveMyNodeId();
+        this.shCache = attachToChanges(peerChangeConsumer);
+        start(serverConfig, consulConfig);
+    }
+
+    private void start(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig) {
         // this method internally uses the executor service
         // beware to create the thing before calling into register
         registerMyself(serverConfig.port(), consulConfig);
         setDefaultCacheLineIdSeed();
         fireUpIdAllocator();
-        this.shCache = attachToChanges(peerChangeConsumer);
         this.isUp.set(true);
     }
 
@@ -134,7 +138,7 @@ class ConsulCluster implements Cluster {
     // - then try to exclusively lock that key with the calculated id
     // - if I could get the lock, take it and be done
     // --- if not, loop all over again and calculate a new node id until I succeed
-    protected String findMyNodeId() {
+    protected String reserveMyNodeId() {
         KeyValueClient kvClient = consul.keyValueClient();
         int counter = 0;
         String myTentativeNodeId;
@@ -257,6 +261,11 @@ class ConsulCluster implements Cluster {
         );
     }
 
+    // id allocation happens in bulks
+    // each node allocates a range of unique ids (by incrementing a counter in consul)
+    // each id in this range of ids is then offered for consumption via the GloballyUniqueIdAllocator interface
+    // all other nodes also compete for the same id ranges
+    // this has the distinct backdraw that if a node dies, all reserved ids are lost forever
     @VisibleForTesting
     Pair<Long, Long> allocateIds(int numIdsToAllocate) {
         Long currentlyHighestCacheLineId = null;
@@ -278,6 +287,9 @@ class ConsulCluster implements Cluster {
         return Pair.of(currentlyHighestCacheLineId - numIdsToAllocate, currentlyHighestCacheLineId);
     }
 
+    // if no other id allocation thread is in-flight, spawn a new one
+    // all ids in the acquired range will be fed into the local (synchronized) queue
+    // the GloballyUniqueIdAllocator will take ids out of this queue
     private void fireUpIdAllocator() {
         if (!idAllocatorInFlight.get()) {
             synchronized (idAllocatorInFlight) {
@@ -350,13 +362,19 @@ class ConsulCluster implements Cluster {
     // that means two things:
     // a) the peerChangeConsumer needs to be really fast
     // b) the peerChangeConsumer needs to dedup existing nodes from new nodes (by putting the into a map or something)
-    private ServiceHealthCache attachToChanges(BiConsumer<Short, InetSocketAddress> peerChangeConsumer) {
+    private ServiceHealthCache attachToChanges(PeerChangeConsumer peerChangeConsumer) {
         ServiceHealthCache shCache = ServiceHealthCache.newCache(consul.healthClient(), serviceName);
-        shCache.addListener(hostsAndHealth -> hostsAndHealth.keySet().forEach(key -> {
-            short nodeId = Short.valueOf(key.getServiceId());
-            InetSocketAddress addr = SocketUtils.socketAddress(key.getHost(), key.getPort());
-            peerChangeConsumer.accept(nodeId, addr);
-        }));
+        shCache.addListener(
+                hostsAndHealth -> {
+                    Map<Short, InetSocketAddress> m = hostsAndHealth.keySet().stream()
+                            .collect(Collectors.toMap(
+                                    key -> Short.valueOf(key.getServiceId()),
+                                    key -> SocketUtils.socketAddress(key.getHost(), key.getPort())
+                            ));
+                    peerChangeConsumer.accept(m);
+                }
+        );
+
         try {
             shCache.start();
         } catch (Exception xcp) {

@@ -17,6 +17,7 @@
 package org.carbon.grid.cache;
 
 import java.net.InetSocketAddress;
+import java.util.Map;
 
 /**
  * This interface mostly defines handler and dispatcher methods.
@@ -41,5 +42,5 @@ public interface InternalCache extends Cache {
      * One way of dealing with this is that stash all nodes in a map nodeId -> addr. This way
      * the new state overrides the old and everything's good.
      */
-    void handlePeerChange(short nodeId, InetSocketAddress addr);
+    void handlePeerChange(Map<Short, InetSocketAddress> nodeIdToAddr);
 }

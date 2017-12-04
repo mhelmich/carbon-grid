@@ -17,8 +17,9 @@
 package org.carbon.grid.cache;
 
 import java.net.InetSocketAddress;
-import java.util.function.BiConsumer;
+import java.util.Map;
+import java.util.function.Consumer;
 
 @FunctionalInterface
-public interface PeerChangeConsumer extends BiConsumer<Short, InetSocketAddress> {
+public interface PeerChangeConsumer extends Consumer<Map<Short, InetSocketAddress>> {
 }

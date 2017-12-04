@@ -20,6 +20,7 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 
 import java.net.InetSocketAddress;
+import java.util.Map;
 
 @Singleton
 class PeerChangeConsumerImpl implements PeerChangeConsumer {
@@ -31,7 +32,7 @@ class PeerChangeConsumerImpl implements PeerChangeConsumer {
     }
 
     @Override
-    public void accept(Short nodeId, InetSocketAddress addr) {
-        cache.handlePeerChange(nodeId, addr);
+    public void accept(Map<Short, InetSocketAddress> idsToAddr) {
+        cache.handlePeerChange(idsToAddr);
     }
 }

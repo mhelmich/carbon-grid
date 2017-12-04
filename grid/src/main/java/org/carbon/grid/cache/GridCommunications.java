@@ -22,6 +22,7 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalListeners;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.hash.Hashing;
 import com.google.inject.Provider;
 import io.netty.channel.ChannelFuture;
@@ -31,7 +32,6 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import io.netty.util.concurrent.Future;
 import org.carbon.grid.CarbonGrid;
-import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,8 +41,10 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -51,6 +53,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * This class handles message passing between nodes.
@@ -79,11 +82,11 @@ class GridCommunications implements Closeable {
     private final NonBlockingHashMapLong<LatchAndMessage> messageIdToLatchAndMessage = new NonBlockingHashMapLong<>();
     // we'd need to keep track of the connection info separately though
     // that could reduce the number of open connections if we don't really need them
-    private final NonBlockingHashMap<Short, InetSocketAddress> nodeIdToSocketAddress = new NonBlockingHashMap<>();
+    private final AtomicReference<Map<Short, InetSocketAddress>> nodeIdsToAddr = new AtomicReference<>(Collections.emptyMap());
     private final CacheLoader<Short, TcpGridClient> loader = new CacheLoader<Short, TcpGridClient>() {
         @Override
         public TcpGridClient load(Short nodeId) throws Exception {
-            InetSocketAddress addr = nodeIdToSocketAddress.get(nodeId);
+            InetSocketAddress addr = nodeIdsToAddr.get().get(nodeId);
             if (addr == null) {
                 logger.error("I can't find a socket address for node with id: " + nodeId);
                 throw new NullPointerException("Can't find a socket address for node with id: " + nodeId);
@@ -129,9 +132,8 @@ class GridCommunications implements Closeable {
         this.internalCache = internalCache;
     }
 
-    void addPeer(short nodeId, InetSocketAddress addr) {
-        logger.info("adding peer {} {}", nodeId, addr);
-        nodeIdToSocketAddress.put(nodeId, addr);
+    void setPeers(Map<Short, InetSocketAddress> nodeIdToAddr) {
+        nodeIdsToAddr.set(ImmutableMap.copyOf(nodeIdToAddr));
     }
 
     // use this for communication with a particular node
@@ -151,16 +153,16 @@ class GridCommunications implements Closeable {
     // a broadcast today is just pinging every node
     // in the cluster in a loop
     CompletableFuture<Void> broadcast(Message msg) throws IOException {
-        return send(nodeIdToSocketAddress.keySet(), msg);
+        return send(nodeIdsToAddr.get().keySet(), msg);
     }
 
     CompletableFuture<Void> broadcast(Message msg, MessageType... waitForAnswersFrom) throws IOException {
-        if (nodeIdToSocketAddress.isEmpty()) {
+        if (nodeIdsToAddr.get().isEmpty()) {
             // if there's no other nodes, there's nothing to do
             return CompletableFuture.completedFuture(null);
         } else {
-            Set<CompletableFuture<MessageType>> futures = new HashSet<>(nodeIdToSocketAddress.size());
-            for (Short toNode : nodeIdToSocketAddress.keySet()) {
+            Set<CompletableFuture<MessageType>> futures = new HashSet<>(nodeIdsToAddr.get().size());
+            for (Short toNode : nodeIdsToAddr.get().keySet()) {
                 // the other code waits for *all* messages to come back
                 // this code (as it is now) waits for all messages in waitForAnswersFrom to come back
                 // or (if that doesn't happen) to complete when all child futures completes

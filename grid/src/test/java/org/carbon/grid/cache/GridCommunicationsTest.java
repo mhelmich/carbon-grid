@@ -17,6 +17,7 @@
 package org.carbon.grid.cache;
 
 import com.google.common.cache.LoadingCache;
+import com.google.common.collect.ImmutableMap;
 import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
@@ -224,12 +225,18 @@ public class GridCommunicationsTest {
             try (GridCommunications comm666 = mockGridCommunications(sender666, port666, cacheMock666)) {
                 try (GridCommunications comm777 = mockGridCommunications(sender777, port777, cacheMock777)) {
 
-                    comm555.addPeer(sender666, SocketUtils.socketAddress("localhost", port666));
-                    comm555.addPeer(sender777, SocketUtils.socketAddress("localhost", port777));
-                    comm666.addPeer(sender555, SocketUtils.socketAddress("localhost", port555));
-                    comm666.addPeer(sender777, SocketUtils.socketAddress("localhost", port777));
-                    comm777.addPeer(sender555, SocketUtils.socketAddress("localhost", port555));
-                    comm777.addPeer(sender666, SocketUtils.socketAddress("localhost", port666));
+                    comm555.setPeers(ImmutableMap.of(
+                            sender666, SocketUtils.socketAddress("localhost", port666),
+                            sender777, SocketUtils.socketAddress("localhost", port777)
+                    ));
+                    comm666.setPeers(ImmutableMap.of(
+                            sender555, SocketUtils.socketAddress("localhost", port555),
+                            sender777, SocketUtils.socketAddress("localhost", port777)
+                    ));
+                    comm777.setPeers(ImmutableMap.of(
+                            sender555, SocketUtils.socketAddress("localhost", port555),
+                            sender666, SocketUtils.socketAddress("localhost", port666)
+                    ));
 
                     Message.GET get = new Message.GET(sender555, lineId);
                     comm555.broadcast(get, MessageType.PUT).get(TIMEOUT, TimeUnit.SECONDS);

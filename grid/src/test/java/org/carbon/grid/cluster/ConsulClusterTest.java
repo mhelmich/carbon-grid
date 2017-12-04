@@ -26,7 +26,7 @@ import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +37,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -46,7 +47,7 @@ import static org.mockito.Mockito.when;
 
 public class ConsulClusterTest {
     private final static int TIMEOUT_SECS = 555;
-    private final PeerChangeConsumer emptyPeerHandler = (id, addr) -> {};
+    private final PeerChangeConsumer emptyPeerHandler = m -> {};
 
     @Test
     public void testRegister() throws IOException {
@@ -118,8 +119,8 @@ public class ConsulClusterTest {
                     () -> {
                         try (ConsulCluster cluster456 = new ConsulCluster(mockServerConfig(8888), mockConsulConfig(), emptyPeerHandler) {
                             @Override
-                            protected String findMyNodeId() {
-                                String s = super.findMyNodeId();
+                            protected String reserveMyNodeId() {
+                                String s = super.reserveMyNodeId();
                                 latch.countDown();
                                 return s;
                             }
@@ -165,31 +166,36 @@ public class ConsulClusterTest {
 
     @Test
     public void testNodeHealthListener() throws IOException, InterruptedException {
-        Map<Short, InetSocketAddress> nodeIdToAddr = new HashMap<>();
+        AtomicReference<Map<Short, InetSocketAddress>> nodeIdToAddr = new AtomicReference<>(Collections.emptyMap());
         AtomicInteger count = new AtomicInteger(0);
         CountDownLatch addedFirstBatch = new CountDownLatch(2);
-        CountDownLatch addedSecondBatch = new CountDownLatch(5);
+        CountDownLatch addedSecondBatch = new CountDownLatch(3);
+        CountDownLatch lastNodeRemoved = new CountDownLatch(4);
 
         try (ConsulCluster cluster123 = mockConsulCluster(7777, emptyPeerHandler)) {
-            try (ConsulCluster cluster456 = mockConsulCluster(8888, (nodeId, addr) -> {
-                nodeIdToAddr.put(nodeId, addr);
+            try (ConsulCluster cluster456 = mockConsulCluster(8888, m -> {
+                nodeIdToAddr.set(m);
                 count.incrementAndGet();
                 addedFirstBatch.countDown();
                 addedSecondBatch.countDown();
+                lastNodeRemoved.countDown();
             })) {
-                assertEquals(2, cluster123.getHealthyNodes().size());
                 assertTrue(addedFirstBatch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
-                assertEquals(2, nodeIdToAddr.size());
+                assertEquals(2, cluster123.getHealthyNodes().size());
+                assertEquals(2, nodeIdToAddr.get().size());
                 assertEquals(2, count.get());
                 try (ConsulCluster cluster789 = mockConsulCluster(9999, emptyPeerHandler)) {
-                    // TODO -- Test.flap()
-                    Thread.sleep(100);
+                    assertTrue(addedSecondBatch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
                     assertEquals(3, cluster789.getHealthyNodes().size());
                     assertEquals(3, cluster123.getHealthyNodes().size());
-                    assertTrue(addedSecondBatch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
-                    assertEquals(3, nodeIdToAddr.size());
-                    assertEquals(2 + 3, count.get());
+                    assertEquals(3, nodeIdToAddr.get().size());
+                    assertEquals(3, count.get());
                 }
+
+                assertTrue(lastNodeRemoved.await(TIMEOUT_SECS, TimeUnit.SECONDS));
+                assertEquals(2, cluster123.getHealthyNodes().size());
+                assertEquals(2, nodeIdToAddr.get().size());
+                assertEquals(4, count.get());
             }
         }
     }
