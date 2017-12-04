@@ -19,7 +19,19 @@ package org.carbon.grid.cluster;
 import java.io.Closeable;
 
 public interface Cluster extends Closeable {
+    /**
+     * Cached state of the upness of this node inside the cluster.
+     * Call it as often as you like. This boolean will be updated after every session renewal run.
+     */
     boolean isUp();
+
+    /**
+     * The node id of this node.
+     */
     short myNodeId();
+
+    /**
+     * Returns a id allocator that spits out globally unique cache line ids.
+     */
     GloballyUniqueIdAllocator getIdAllocator();
 }
