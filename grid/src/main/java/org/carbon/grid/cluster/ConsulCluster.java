@@ -71,9 +71,8 @@ import java.util.stream.Collectors;
 class ConsulCluster implements Cluster {
     private final static Logger logger = LoggerFactory.getLogger(ConsulCluster.class);
     private final static String serviceName = "carbon-grid";
-    private final static String NODE_ID_KEY_PREFIX = serviceName + "/cluster/node-ids/node-id-";
     private final static String CACHE_LINE_ID_KEY = serviceName + "/cluster/cache-lines/running-cache-line-id";
-//    private final static String NODE_INFO_KEY_PREFIX = serviceName + "/cluster/node-info/";
+    private final static String NODE_INFO_KEY_PREFIX = serviceName + "/cluster/node-info/";
     private final static int NUM_RETRIES = 10;
     private final static int ID_CHUNK_SIZE = 100;
     final static short MIN_NODE_ID = 500;
@@ -106,16 +105,16 @@ class ConsulCluster implements Cluster {
                 .build();
         this.consulSessionId = createConsulSession(consulConfig);
         this.myNodeId = reserveMyNodeId();
-        this.shCache = attachToChanges(peerChangeConsumer);
+        this.shCache = attachNodeHealthListener(peerChangeConsumer);
         finishBootstrappingCluster(serverConfig, consulConfig);
     }
 
     private void finishBootstrappingCluster(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig) {
         // this method internally uses the executor service
         // beware to create the thing before calling into register
-        registerMyself(serverConfig.port(), consulConfig);
+        registerHealthCheckJobs(serverConfig.port(), consulConfig);
         setDefaultCacheLineIdSeed();
-        fireUpIdAllocator();
+        triggerGloballyUniqueIdAllocator();
         this.isUp.set(true);
     }
 
@@ -149,11 +148,13 @@ class ConsulCluster implements Cluster {
                 throw new RuntimeException("Can't acquire a new node id");
             }
             counter++;
-            List<String> takenKeys = listKeys(kvClient, NODE_ID_KEY_PREFIX);
+            List<String> takenKeys = listKeys(kvClient, NODE_INFO_KEY_PREFIX);
             myTentativeNodeId = calcNextNodeId(takenKeys);
             logger.info("Trying to acquire node id {}", myTentativeNodeId);
-        } while (!kvClient.acquireLock(NODE_ID_KEY_PREFIX + myTentativeNodeId, consulSessionId));
-        kvClient.putValue(NODE_ID_KEY_PREFIX + myTentativeNodeId, myTentativeNodeId);
+        } while (!kvClient.acquireLock(NODE_INFO_KEY_PREFIX + myTentativeNodeId, consulSessionId));
+        // fill in value to be empty
+        // that's where the NodeInfo will go later when we know this nodes role, etc.
+        kvClient.putValue(NODE_INFO_KEY_PREFIX + myTentativeNodeId, "");
         logger.info("Acquired node id {}", myTentativeNodeId);
         return myTentativeNodeId;
     }
@@ -192,7 +193,7 @@ class ConsulCluster implements Cluster {
         }
 
         Collections.sort(takenKeys);
-        takenKeys = takenKeys.stream().map(key -> key.substring(NODE_ID_KEY_PREFIX.length())).collect(Collectors.toList());
+        takenKeys = takenKeys.stream().map(key -> key.substring(NODE_INFO_KEY_PREFIX.length())).collect(Collectors.toList());
 
         if (Integer.valueOf(takenKeys.get(0)) != MIN_NODE_ID) {
             return String.valueOf(MIN_NODE_ID);
@@ -218,7 +219,7 @@ class ConsulCluster implements Cluster {
     }
 
     // register two scheduled jobs that keep refreshing the session and the service health check
-    private void registerMyself(int myServicePort, CarbonGrid.ConsulConfig consulConfig) {
+    private void registerHealthCheckJobs(int myServicePort, CarbonGrid.ConsulConfig consulConfig) {
         consul.agentClient().register(myServicePort, consulConfig.timeout(), serviceName, myNodeId);
         executorService.scheduleAtFixedRate(
                 () -> {
@@ -290,7 +291,7 @@ class ConsulCluster implements Cluster {
     // if no other id allocation thread is in-flight, spawn a new one
     // all ids in the acquired range will be fed into the local (synchronized) queue
     // the GloballyUniqueIdAllocator will take ids out of this queue
-    private void fireUpIdAllocator() {
+    private void triggerGloballyUniqueIdAllocator() {
         if (!idAllocatorInFlight.get()) {
             synchronized (idAllocatorInFlight) {
                 if (!idAllocatorInFlight.get()) {
@@ -339,7 +340,7 @@ class ConsulCluster implements Cluster {
                 throw new RuntimeException("Can't allocate new cache line ids", e);
             }
             if (highWaterMarkCacheLineId.get() - id < 50) {
-                fireUpIdAllocator();
+                triggerGloballyUniqueIdAllocator();
             }
             return id;
         };
@@ -362,7 +363,7 @@ class ConsulCluster implements Cluster {
     // that means two things:
     // a) the peerChangeConsumer needs to be really fast
     // b) the peerChangeConsumer needs to dedup existing nodes from new nodes (by putting the into a map or something)
-    private ServiceHealthCache attachToChanges(PeerChangeConsumer peerChangeConsumer) {
+    private ServiceHealthCache attachNodeHealthListener(PeerChangeConsumer peerChangeConsumer) {
         ServiceHealthCache shCache = ServiceHealthCache.newCache(consul.healthClient(), serviceName);
         shCache.addListener(
                 hostsAndHealth -> {
