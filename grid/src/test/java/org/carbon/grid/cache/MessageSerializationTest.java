@@ -81,6 +81,17 @@ public class MessageSerializationTest {
 
         Message.INVACK invAck = new Message.INVACK(messageSequence, sender, lineId);
         runTest(invAck);
+
+        buf = newRandomBuffer().retain();
+        try {
+            Message.BACKUP backup = new Message.BACKUP(sender, lineId, 45678L, 456123789L, 816, buf);
+            runTest(backup);
+        } finally {
+            buf.release();
+        }
+
+        Message.BACKUPACK backupack = new Message.BACKUPACK(messageSequence, sender, lineId, 852369L);
+        runTest(backupack);
     }
 
     private void runTest(Message msgToSerialize) throws IOException {

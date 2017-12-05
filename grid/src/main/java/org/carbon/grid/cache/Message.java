@@ -574,6 +574,169 @@ abstract class Message implements Persistable {
         }
     }
 
+    static class BACKUP extends Request {
+        // this is an ever incrementing long (possibly even the system timestamp)
+        // this is used to establish a "global state" among all replicas of a leader
+        // replicas will go and compete for leadership with the latest message number they received
+        // the replica with the highest message number wins and will become new leader
+        long runningMessageNumber;
+        // after a failover the new leader might need to replay a bunch of messages to the rest of the replicas
+        // for that replicas keep a short history of all changes
+        // the leader however provides replicas with the latest state that all replicas know about
+        // everything older than this is safe to discard as all replicas know about this state already
+        long lastAckedMessageNumber;
+        int version;
+        ByteBuf buffer;
+
+        BACKUP() {
+            super(MessageType.BACKUP);
+        }
+
+        BACKUP(short sender, long lineId, long runningMessageNumber, long lastAckedMessageNumber, int version, ByteBuf buffer) {
+            super(MessageType.BACKUP);
+            this.sender = sender;
+            this.lineId = lineId;
+            this.runningMessageNumber = runningMessageNumber;
+            this.lastAckedMessageNumber = lastAckedMessageNumber;
+            this.version = version;
+            this.buffer = buffer;
+        }
+
+        @Override
+        public int calcMessagesByteSize() {
+            return super.calcMessagesByteSize()
+                    + 8                                          // running message number long
+                    + 8                                          // last acked message number long
+                    + 4                                          // version number int
+                    + 4                                          // bytebuf size
+                    + ((buffer == null) ? 0 : buffer.capacity()) // buffer content
+                    ;
+        }
+
+        @Override
+        public void write(MessageOutput out) throws IOException {
+            super.write(out);
+            out.writeLong(runningMessageNumber);
+            out.writeLong(lastAckedMessageNumber);
+            out.writeInt(version);
+            if (buffer != null) {
+                out.writeInt(buffer.capacity());
+                out.writeByteBuf(buffer.resetReaderIndex());
+                buffer.release();
+            } else {
+                out.writeInt(0);
+            }
+        }
+
+        @Override
+        public void read(MessageInput in) throws IOException {
+            super.read(in);
+            runningMessageNumber = in.readLong();
+            lastAckedMessageNumber = in.readLong();
+            version = in.readInt();
+            int bytesToRead = in.readInt();
+            buffer = (bytesToRead == 0) ? null : in.readByteBuf(bytesToRead);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (BACKUP.class.isInstance(obj)) {
+                BACKUP that = (BACKUP)obj;
+                return super.equals(that)
+                        && this.runningMessageNumber == that.runningMessageNumber
+                        && this.lastAckedMessageNumber == that.lastAckedMessageNumber
+                        && this.version == that.version
+                        && this.buffer.capacity() == that.buffer.capacity();
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        BACKUP copy() {
+            return new BACKUP(sender, lineId, runningMessageNumber, lastAckedMessageNumber, version, buffer);
+        }
+
+        @Override
+        public int hashCode() {
+            return Hashing.goodFastHash(32)
+                    .hashObject(this, backupFunnel)
+                    .asInt();
+        }
+
+        private static final Funnel<BACKUP> backupFunnel = (Funnel<BACKUP>) (msg, into) -> into
+                .putByte(msg.type.ordinal)
+                .putShort(msg.sender)
+                .putInt(msg.messageSequenceNumber)
+                .putLong(msg.lineId)
+                .putLong(msg.runningMessageNumber)
+                .putLong(msg.lastAckedMessageNumber)
+                .putInt(msg.version)
+                .putInt((msg.buffer == null) ? 0 : msg.buffer.capacity())
+                ;
+    }
+
+    static class BACKUPACK extends Response {
+        long runningMessageNumber;
+
+        BACKUPACK() {
+            super(MessageType.BACKUP_ACK);
+        }
+
+        BACKUPACK(int requestMessageId, short sender, long lineId, long runningMessageNumber) {
+            super(MessageType.BACKUP_ACK);
+            this.messageSequenceNumber = requestMessageId;
+            this.sender = sender;
+            this.lineId = lineId;
+            this.runningMessageNumber = runningMessageNumber;
+        }
+
+        @Override
+        public int calcMessagesByteSize() {
+            return super.calcMessagesByteSize()
+                    + 8 // running message number long
+                    ;
+        }
+
+        @Override
+        public void write(MessageOutput out) throws IOException {
+            super.write(out);
+            out.writeLong(runningMessageNumber);
+        }
+
+        @Override
+        public void read(MessageInput in) throws IOException {
+            super.read(in);
+            runningMessageNumber = in.readLong();
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (BACKUPACK.class.isInstance(obj)) {
+                BACKUPACK that = (BACKUPACK)obj;
+                return super.equals(that)
+                        && this.runningMessageNumber == that.runningMessageNumber;
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return Hashing.goodFastHash(32)
+                    .hashObject(this, backupackFunnel)
+                    .asInt();
+        }
+
+        private static final Funnel<BACKUPACK> backupackFunnel = (Funnel<BACKUPACK>) (msg, into) -> into
+                .putByte(msg.type.ordinal)
+                .putShort(msg.sender)
+                .putInt(msg.messageSequenceNumber)
+                .putLong(msg.lineId)
+                .putLong(msg.runningMessageNumber)
+                ;
+    }
+
     static class DeserializationMessageFactory {
         Message createMessageShellForType(MessageType type) {
             switch (type) {
@@ -593,6 +756,10 @@ abstract class Message implements Persistable {
                     return new INV();
                 case INVACK:
                     return new INVACK();
+                case BACKUP:
+                    return new BACKUP();
+                case BACKUP_ACK:
+                    return new BACKUPACK();
                 default:
                     throw new IllegalArgumentException("Unknown type " + type);
             }
