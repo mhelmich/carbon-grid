@@ -229,6 +229,19 @@ class ConsulClient implements Closeable {
         }
     }
 
+    boolean acquireLockWithWait(String key) {
+        int count = 0;
+        while (!acquireLock(key)) {
+            count++;
+            if (count >= NUM_RETRIES) {
+                return false;
+            } else {
+                sleep(count * 50);
+            }
+        }
+        return true;
+    }
+
     private boolean acquireLock(String key) {
         return consul.keyValueClient().acquireLock(key, this.consulSessionId);
     }
@@ -237,7 +250,7 @@ class ConsulClient implements Closeable {
         return consul.keyValueClient().releaseLock(key, this.consulSessionId);
     }
 
-    private boolean putValue(String key, String value) {
+    boolean putValue(String key, String value) {
         return consul.keyValueClient().putValue(key, value);
     }
 
@@ -245,12 +258,12 @@ class ConsulClient implements Closeable {
         return consul.keyValueClient().putValue(key, value, 0L, ImmutablePutOptions.builder().cas(0L).build());
     }
 
-    String getValueAsString(String key) {
+    java.util.Optional<String> getValueAsString(String key) {
         com.google.common.base.Optional<Value> valueOpt = consul.keyValueClient().getValue(key);
         if (valueOpt.isPresent() && valueOpt.get().getValue().isPresent()) {
-            return valueOpt.get().getValue().get();
+            return java.util.Optional.of(valueOpt.get().getValue().get());
         } else {
-            return null;
+            return java.util.Optional.empty();
         }
     }
 
@@ -328,6 +341,6 @@ class ConsulClient implements Closeable {
 
     @Override
     public String toString() {
-        return "sessionId: " + consulSessionId + " consulSessionName: " + consulSessionName;
+        return "myNodeId: " + myNodeIdStr + " sessionId: " + consulSessionId + " consulSessionName: " + consulSessionName;
     }
 }

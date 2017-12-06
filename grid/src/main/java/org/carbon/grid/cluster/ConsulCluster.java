@@ -161,31 +161,6 @@ class ConsulCluster implements Cluster {
         }
     }
 
-//    private final static String REPLICA_REQUIRED_LIST = serviceName + "/cluster/replicas-required";
-//
-//    private void figureOutRole() {
-//        int count = 0;
-//        while (!consul.keyValueClient().acquireLock(REPLICA_REQUIRED_LIST, consulSessionId)) {
-//            count++;
-//            sleep(50 * count);
-//        }
-//
-//        try {
-//            String requiredReplicasListString;
-//            Optional<Value> valueOpt = consul.keyValueClient().getValue(REPLICA_REQUIRED_LIST);
-//            if (valueOpt.isPresent()) {
-//                if (valueOpt.get().getValue().isPresent()) {
-//                    requiredReplicasListString = valueOpt.get().getValue().get();
-//
-//                }
-//            } else {
-//                consul.keyValueClient().putValue(REPLICA_REQUIRED_LIST, "");
-//            }
-//        } finally {
-//            consul.keyValueClient().releaseLock(REPLICA_REQUIRED_LIST, consulSessionId);
-//        }
-//    }
-
     @Override
     public boolean isUp() {
         return isUp.get();
