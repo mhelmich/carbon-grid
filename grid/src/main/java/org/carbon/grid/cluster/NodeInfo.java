@@ -53,10 +53,6 @@ public class NodeInfo implements Serializable {
         }
     }
 
-    NodeInfo(short nodeId) {
-        this(nodeId, null, Collections.emptySet(), (short)-1);
-    }
-
     NodeInfo(short nodeId, Set<Short> replicaIds) {
         this(nodeId, true, replicaIds, (short)-1);
     }

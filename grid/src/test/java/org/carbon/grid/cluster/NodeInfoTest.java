@@ -48,12 +48,6 @@ public class NodeInfoTest {
         assertEqualsNodeInfo(ni1, ni2);
     }
 
-    @Test(expected = IllegalStateException.class)
-    public void testReadWriteFail() {
-        NodeInfo ni1 = new NodeInfo((short)15);
-        String value1 = ni1.toConsulValue();
-    }
-
     private void assertEqualsNodeInfo(NodeInfo ni1, NodeInfo ni2) {
         assertEquals(ni1.nodeId, ni2.nodeId);
         assertEquals(ni1.isLeader, ni2.isLeader);

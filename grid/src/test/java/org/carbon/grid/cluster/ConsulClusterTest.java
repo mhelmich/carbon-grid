@@ -16,8 +16,6 @@
 
 package org.carbon.grid.cluster;
 
-import com.google.common.net.HostAndPort;
-import com.orbitz.consul.Consul;
 import org.apache.commons.lang3.tuple.Pair;
 import org.carbon.grid.CarbonGrid;
 import org.carbon.grid.cache.PeerChangeConsumer;
@@ -28,13 +26,9 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -42,19 +36,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 import static org.mockito.Mockito.when;
 
 public class ConsulClusterTest {
     private final static int TIMEOUT_SECS = 555;
     private final PeerChangeConsumer emptyPeerHandler = m -> {};
-
-    @Test
-    public void testRegister() throws IOException {
-        try (ConsulCluster cluster = mockConsulCluster(9999, emptyPeerHandler)) {
-            assertEquals(ConsulCluster.MIN_NODE_ID, cluster.myNodeId());
-        }
-    }
 
     @Test
     public void testRegisterMultipleClusters() throws IOException {
@@ -74,67 +60,6 @@ public class ConsulClusterTest {
         }
 
         assertTrue(nodeIds.isEmpty());
-    }
-
-    @Test
-    public void testRegisterConcurrent() {
-        Consul consul = Consul.builder()
-                .withHostAndPort(HostAndPort.fromParts("localhost", 8500))
-                .build();
-
-        String prefix = UUID.randomUUID().toString();
-        consul.keyValueClient().putValue( prefix + "-500", "500");
-        consul.keyValueClient().putValue( prefix + "-501", "501");
-        consul.keyValueClient().putValue( prefix + "-502", "502");
-        // GAP
-        consul.keyValueClient().putValue( prefix + "-504", "504");
-        consul.keyValueClient().putValue( prefix + "-505", "505");
-
-        CountDownLatch latch = new CountDownLatch(1);
-
-        ExecutorService es = Executors.newFixedThreadPool(2);
-        try {
-            es.submit(
-                    () -> {
-                        try (ConsulCluster cluster123 = new ConsulCluster(mockServerConfig(7777), mockConsulConfig(), emptyPeerHandler) {
-                            @Override
-                            protected String calcNextNodeId(List<String> takenKeys) {
-                                String nodeId = super.calcNextNodeId(takenKeys);
-                                try {
-                                    assertTrue(latch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
-                                } catch (InterruptedException e) {
-                                    fail();
-                                }
-                                return nodeId;
-                            }
-                        }) {
-                            assertEquals((short)506, cluster123.myNodeId());
-                        } catch (IOException e) {
-                            fail();
-                        }
-                    }
-            );
-
-            es.submit(
-                    () -> {
-                        try (ConsulCluster cluster456 = new ConsulCluster(mockServerConfig(8888), mockConsulConfig(), emptyPeerHandler) {
-                            @Override
-                            protected String reserveMyNodeId() {
-                                String s = super.reserveMyNodeId();
-                                latch.countDown();
-                                return s;
-                            }
-                        }) {
-                            assertEquals((short)503, cluster456.myNodeId());
-                        } catch (IOException e) {
-                            fail();
-                        }
-                    }
-            );
-        } finally {
-            es.shutdown();
-            consul.destroy();
-        }
     }
 
     @Test
