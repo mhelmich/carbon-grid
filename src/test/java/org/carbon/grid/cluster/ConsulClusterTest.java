@@ -93,9 +93,9 @@ public class ConsulClusterTest {
     public void testNodeHealthListener() throws IOException, InterruptedException {
         AtomicReference<Map<Short, InetSocketAddress>> nodeIdToAddr = new AtomicReference<>(Collections.emptyMap());
         AtomicInteger count = new AtomicInteger(0);
-        CountDownLatch addedFirstBatch = new CountDownLatch(2);
-        CountDownLatch addedSecondBatch = new CountDownLatch(3);
-        CountDownLatch lastNodeRemoved = new CountDownLatch(4);
+        CountDownLatch addedFirstBatch = new CountDownLatch(1);
+        CountDownLatch addedSecondBatch = new CountDownLatch(2);
+        CountDownLatch lastNodeRemoved = new CountDownLatch(3);
 
         try (ConsulCluster cluster123 = mockConsulCluster(7777, emptyPeerHandler)) {
             try (ConsulCluster cluster456 = mockConsulCluster(8888, m -> {
@@ -108,19 +108,19 @@ public class ConsulClusterTest {
                 assertTrue(addedFirstBatch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
                 assertEquals(2, cluster123.getHealthyNodes().size());
                 assertEquals(2, nodeIdToAddr.get().size());
-                assertEquals(2, count.get());
+                assertEquals(1, count.get());
                 try (ConsulCluster cluster789 = mockConsulCluster(9999, emptyPeerHandler)) {
                     assertTrue(addedSecondBatch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
                     assertEquals(3, cluster789.getHealthyNodes().size());
                     assertEquals(3, cluster123.getHealthyNodes().size());
                     assertEquals(3, nodeIdToAddr.get().size());
-                    assertEquals(3, count.get());
+                    assertEquals(2, count.get());
                 }
 
                 assertTrue(lastNodeRemoved.await(TIMEOUT_SECS, TimeUnit.SECONDS));
                 assertEquals(2, cluster123.getHealthyNodes().size());
                 assertEquals(2, nodeIdToAddr.get().size());
-                assertEquals(4, count.get());
+                assertEquals(3, count.get());
             }
         }
     }

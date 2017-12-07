@@ -21,12 +21,16 @@ import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
 import com.orbitz.consul.ConsulException;
 import com.orbitz.consul.NotRegisteredException;
-import com.orbitz.consul.cache.ServiceHealthCache;
+import com.orbitz.consul.async.ConsulResponseCallback;
+import com.orbitz.consul.model.ConsulResponse;
+import com.orbitz.consul.model.health.Service;
 import com.orbitz.consul.model.health.ServiceHealth;
 import com.orbitz.consul.model.kv.Value;
 import com.orbitz.consul.model.session.ImmutableSession;
 import com.orbitz.consul.model.session.Session;
 import com.orbitz.consul.option.ImmutablePutOptions;
+import com.orbitz.consul.option.ImmutableQueryOptions;
+import com.orbitz.consul.option.QueryOptions;
 import io.netty.util.internal.SocketUtils;
 import org.carbon.grid.CarbonGrid;
 import org.carbon.grid.cache.PeerChangeConsumer;
@@ -35,13 +39,19 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.InetSocketAddress;
+import java.net.SocketTimeoutException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -74,19 +84,25 @@ class ConsulClient implements Closeable {
     private final short myNodeId;
     private final String myNodeIdStr;
     private final String consulSessionId;
-    private final ServiceHealthCache shCache;
+
+    private final ConsulRequestCallback<ServiceHealth> healthRequestCallback;
 
     ConsulClient(CarbonGrid.ConsulConfig consulConfig, ScheduledExecutorService executorService) {
         this.consulConfig = consulConfig;
         this.executorService = executorService;
+        logger.info("Connecting to consul at {} {}", consulConfig.host(), consulConfig.port());
         this.consul = Consul.builder()
                 .withHostAndPort(HostAndPort.fromParts(consulConfig.host(), consulConfig.port()))
                 .withExecutorService(executorService)
                 .build();
         this.consulSessionId = createConsulSession(consulConfig);
-        this.shCache = newServiceHealthCache();
         this.myNodeId = reserveMyNodeId();
         this.myNodeIdStr = String.valueOf(this.myNodeId);
+        this.healthRequestCallback = (index, responseCallback) -> {
+            QueryOptions params = generateBlockingQueryOptions(index, 10);
+            logger.info("calling consul with index {} and params {}", latestIndex.get(), params);
+            consul.healthClient().getHealthyServiceInstances(SERVICE_NAME, params, healthResponseCallback);
+        };
     }
 
     private String createConsulSession(CarbonGrid.ConsulConfig consulConfig) {
@@ -99,16 +115,6 @@ class ConsulClient implements Closeable {
         return consul.sessionClient().createSession(session).getId();
     }
 
-    private ServiceHealthCache newServiceHealthCache() {
-        ServiceHealthCache cache = ServiceHealthCache.newCache(consul.healthClient(), SERVICE_NAME);
-        try {
-            cache.start();
-        } catch (Exception xcp) {
-            throw new RuntimeException(xcp);
-        }
-        return cache;
-    }
-
     // register two scheduled jobs that keep refreshing the session and the service health check
     void registerHealthCheckJobs(int myServicePort, Consumer<Exception> healthCheckFailedCallback) {
         consul.agentClient().register(myServicePort, consulConfig.timeout(), SERVICE_NAME, myNodeIdStr);
@@ -119,6 +125,7 @@ class ConsulClient implements Closeable {
                     } catch (NotRegisteredException xcp) {
                         throw new RuntimeException(xcp);
                     } catch (Exception xcp) {
+                        logger.error("", xcp);
                         healthCheckFailedCallback.accept(xcp);
                     }
                 },
@@ -133,6 +140,7 @@ class ConsulClient implements Closeable {
                     try {
                         consul.sessionClient().renewSession(consulSessionId);
                     } catch (Exception xcp) {
+                        logger.error("", xcp);
                         healthCheckFailedCallback.accept(xcp);
                     }
                 },
@@ -141,6 +149,8 @@ class ConsulClient implements Closeable {
                 consulConfig.timeout() / 2,
                 TimeUnit.SECONDS
         );
+
+        runNodeHealthListener();
     }
 
     Map<Short, InetSocketAddress> getHealthyNodes() {
@@ -295,17 +305,14 @@ class ConsulClient implements Closeable {
     // a) the peerChangeConsumer needs to be really fast
     // b) the peerChangeConsumer needs to dedup existing nodes from new nodes (by putting the into a map or something)
     boolean addPeerChangeConsumer(PeerChangeConsumer peerChangeConsumer) {
-        return shCache.addListener(
-                hostsAndHealth -> {
-                    Map<Short, InetSocketAddress> m = hostsAndHealth.keySet().stream()
-                            .collect(Collectors.toMap(
-                                    key -> Short.valueOf(key.getServiceId()),
-                                    key -> SocketUtils.socketAddress(key.getHost(), key.getPort())
-                            ));
-                    peerChangeConsumer.accept(m);
-                }
-        );
+        boolean added = peerChangeConsumers.add(peerChangeConsumer);
+        if (latestServiceHealthMap.get() != null) {
+            peerChangeConsumer.accept(latestServiceHealthMap.get());
+        }
+        return added;
     }
+
+    private final List<PeerChangeConsumer> peerChangeConsumers = new ArrayList<>();
 
     short myNodeId() {
         return myNodeId;
@@ -323,9 +330,7 @@ class ConsulClient implements Closeable {
     @Override
     public void close() throws IOException {
         try {
-            shCache.stop();
-        } catch (Exception xcp) {
-            logger.warn("Error during shutdown ... but at this point I don't really care anymore", xcp);
+            listenersAreRunning.set(false);
         } finally {
             try {
                 consul.agentClient().deregister(myNodeIdStr);
@@ -343,4 +348,75 @@ class ConsulClient implements Closeable {
     public String toString() {
         return "myNodeId: " + myNodeIdStr + " sessionId: " + consulSessionId + " consulSessionName: " + consulSessionName;
     }
+
+    private final AtomicBoolean listenersAreRunning = new AtomicBoolean(true);
+    private final AtomicReference<BigInteger> latestIndex = new AtomicReference<>(null);
+    private final AtomicReference<ImmutableMap<Short, InetSocketAddress>> latestServiceHealthMap = new AtomicReference<>(null);
+
+    private final ConsulResponseCallback<List<ServiceHealth>> healthResponseCallback = new ConsulResponseCallback<List<ServiceHealth>>() {
+        @Override
+        public void onComplete(ConsulResponse<List<ServiceHealth>> consulResponse) {
+            logger.info("onComplete called with index {}", consulResponse.getIndex());
+            if (consulResponse.isKnownLeader()) {
+                if (listenersAreRunning.get()) {
+                    latestIndex.set(consulResponse.getIndex());
+                    if (consulResponse.getResponse() != null) {
+                        ImmutableMap.Builder<Short, InetSocketAddress> mb = ImmutableMap.builder();
+                        for (ServiceHealth sh : consulResponse.getResponse()) {
+                            Service s = sh.getService();
+                            mb.put(Short.valueOf(s.getId()), SocketUtils.socketAddress(s.getAddress(), s.getPort()));
+                        }
+
+                        ImmutableMap<Short, InetSocketAddress> m = mb.build();
+                        if (!m.equals(latestServiceHealthMap.get())) {
+                            latestServiceHealthMap.set(m);
+                            for (PeerChangeConsumer pcc : peerChangeConsumers) {
+                                pcc.accept(m);
+                            }
+                        }
+
+                    }
+                    runNodeHealthListener();
+                }
+            } else {
+                onFailure(new ConsulException("Consul cluster has no elected leader"));
+            }
+        }
+
+        @Override
+        public void onFailure(Throwable throwable) {
+            if (listenersAreRunning.get()) {
+                logger.error("", throwable);
+                if (!SocketTimeoutException.class.equals(throwable.getClass())) {
+                    logger.error("", throwable);
+                }
+                executorService.schedule(ConsulClient.this::runNodeHealthListener, 3, TimeUnit.SECONDS);
+            }
+        }
+    };
+
+    private void runNodeHealthListener() {
+        this.healthRequestCallback.accept(latestIndex.get(), healthResponseCallback);
+    }
+
+    private QueryOptions generateBlockingQueryOptions(BigInteger index, int blockSeconds) {
+        return generateBlockingQueryOptions(index, blockSeconds, QueryOptions.BLANK);
+    }
+
+    private QueryOptions generateBlockingQueryOptions(BigInteger index, int blockSeconds, QueryOptions queryOptions) {
+        if (index == null) {
+            return QueryOptions.BLANK;
+        } else {
+            return ImmutableQueryOptions.builder()
+                    .from(QueryOptions.blockSeconds(blockSeconds, index).build())
+                    .token(queryOptions.getToken())
+                    .consistencyMode(queryOptions.getConsistencyMode())
+                    .near(queryOptions.getNear())
+                    .datacenter(queryOptions.getDatacenter())
+                    .build();
+        }
+    }
+
+    @FunctionalInterface
+    interface ConsulRequestCallback<V> extends BiConsumer<BigInteger, ConsulResponseCallback<List<V>>> { }
 }
