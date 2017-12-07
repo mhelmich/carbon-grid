@@ -16,6 +16,7 @@
 
 package org.carbon.grid;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -28,6 +29,11 @@ import org.cfg4j.provider.ConfigurationProvider;
 import org.cfg4j.provider.ConfigurationProviderBuilder;
 import org.cfg4j.source.ConfigurationSource;
 import org.cfg4j.source.classpath.ClasspathConfigurationSource;
+import org.cfg4j.source.context.environment.Environment;
+import org.cfg4j.source.context.environment.ImmutableEnvironment;
+import org.cfg4j.source.files.FilesConfigurationSource;
+import org.cfg4j.source.reload.ReloadStrategy;
+import org.cfg4j.source.reload.strategy.PeriodicalReloadStrategy;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,8 +41,12 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.TimeUnit;
 
 public final class CarbonGrid implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(CarbonGrid.class);
@@ -65,8 +75,9 @@ public final class CarbonGrid implements Closeable {
             return;
         }
 
-        // TODO -- build stand-alone server start method
-        start();
+        logger.info("Starting as standalone data node with config file at {}", args[1]);
+        Path configFile = Paths.get(args[1]);
+        start(configFile);
     }
 
     /**
@@ -85,9 +96,21 @@ public final class CarbonGrid implements Closeable {
      * Start carbon grid and point it to the config file it is supposed to load.
      */
     public static CarbonGrid start(Path configFile) throws CarbonGridException {
-        logger.info("Searching for config file here: {}", configFile);
-        ConfigurationSource cs = new ClasspathConfigurationSource(() -> configFile);
-        return innerStart(cs);
+        Path absPath = configFile.toAbsolutePath();
+        logger.info("Searching for config file here: {}", absPath);
+        if (!Files.exists(configFile)) {
+            throw new CarbonGridException("Config file " + absPath + " doesn't exist!!");
+        }
+
+        ConfigurationSource cs = new FilesConfigurationSource(absPath::getFileName);
+        Environment ce = new ImmutableEnvironment(absPath.getParent().toString());
+        ReloadStrategy reloadStrategy = new PeriodicalReloadStrategy(1, TimeUnit.MINUTES);
+        ConfigurationProvider configProvider = new ConfigurationProviderBuilder()
+                .withConfigurationSource(cs)
+                .withEnvironment(ce)
+                .withReloadStrategy(reloadStrategy)
+                .build();
+        return innerStart(configProvider);
     }
 
     /**
@@ -97,13 +120,18 @@ public final class CarbonGrid implements Closeable {
         return start(configFile.toPath());
     }
 
+    @VisibleForTesting
     static CarbonGrid innerStart(ConfigurationSource cs) {
         ConfigurationProvider configProvider = new ConfigurationProviderBuilder()
                 .withConfigurationSource(cs)
                 .build();
 
-        CarbonGrid grid = hashToGrid.putIfAbsent(cs.hashCode(), new CarbonGrid(configProvider));
-        return grid == null ? hashToGrid.get(cs.hashCode()) : grid;
+        return innerStart(configProvider);
+    }
+
+    private static CarbonGrid innerStart(ConfigurationProvider configProvider) {
+        CarbonGrid grid = hashToGrid.putIfAbsent(configProvider.hashCode(), new CarbonGrid(configProvider));
+        return grid == null ? hashToGrid.get(configProvider.hashCode()) : grid;
     }
 
     private final ConfigurationProvider configProvider;
@@ -114,6 +142,18 @@ public final class CarbonGrid implements Closeable {
     private CarbonGrid(ConfigurationProvider configProvider) {
         this.configProvider = configProvider;
         createInjector(configProvider);
+        printBanner();
+    }
+
+    private void printBanner() {
+        URL bannerUrl = CarbonGrid.class.getResource("/banner.txt");
+        if (bannerUrl != null) {
+            try {
+                Files.readAllLines(Paths.get(bannerUrl.toURI())).forEach(System.out::println);
+            } catch (IOException | URISyntaxException e) {
+                // do nothing
+            }
+        }
     }
 
     private void createInjector(ConfigurationProvider configProvider) {
@@ -167,6 +207,9 @@ public final class CarbonGrid implements Closeable {
         protected void configure() {
             bind(ServerConfig.class).toInstance(configProvider.bind("server", ServerConfig.class));
             bind(ConsulConfig.class).toInstance(configProvider.bind("consul", ConsulConfig.class));
+            if (configProvider.allConfigurationAsProperties().contains("cache")) {
+                bind(CacheConfig.class).toInstance(configProvider.bind("cache", CacheConfig.class));
+            }
         }
     }
 
@@ -185,5 +228,10 @@ public final class CarbonGrid implements Closeable {
         Integer port();
         Integer timeout();
         Integer numCheckinFailuresToShutdown();
+    }
+
+    public interface CacheConfig {
+        Long availableMemory();
+        Long maxItemSize();
     }
 }
