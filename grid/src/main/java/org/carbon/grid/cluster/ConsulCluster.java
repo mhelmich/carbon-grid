@@ -48,7 +48,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * - node info and what it looks like
  * - changes in node upness (and the listener and its consumer)
  * - death pills
- * - leader-replica allocation
+ * - leader-replica allocation (I still have to define a HA strategy)
  */
 @Singleton
 class ConsulCluster implements Cluster {
