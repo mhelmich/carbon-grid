@@ -49,6 +49,11 @@ public final class CarbonGrid implements Closeable {
         logger.error("java -jar carbon-grid.jar server <path-to-config-file>");
     }
 
+    /**
+     * Stand-alone data node entry point.
+     * You have to start CarbonGrid by providing a command line like this:
+     * java -jar carbon-grid.jar server <path-to-config-file>
+     */
     public static void main(String[] args) {
         if (args.length != 2) {
             printUsage();
