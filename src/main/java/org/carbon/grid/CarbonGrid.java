@@ -38,11 +38,11 @@ import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.net.URISyntaxException;
-import java.net.URL;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -142,17 +142,24 @@ public final class CarbonGrid implements Closeable {
     private CarbonGrid(ConfigurationProvider configProvider) {
         this.configProvider = configProvider;
         createInjector(configProvider);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                shutdownGracefully();
+            } catch (IOException xcp) {
+                logger.warn("Error during shutdown", xcp);
+            }
+        }));
         printBanner();
     }
 
     private void printBanner() {
-        URL bannerUrl = CarbonGrid.class.getResource("/banner.txt");
-        if (bannerUrl != null) {
-            try {
-                Files.readAllLines(Paths.get(bannerUrl.toURI())).forEach(System.out::println);
-            } catch (IOException | URISyntaxException e) {
-                // do nothing
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(CarbonGrid.class.getResourceAsStream("/banner.txt")))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                System.out.println(line);
             }
+        } catch (Exception xcp) {
+            // no op
         }
     }
 
