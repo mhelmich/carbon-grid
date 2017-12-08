@@ -19,6 +19,7 @@ package org.carbon.grid.cache;
 import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import org.carbon.grid.CarbonGrid;
 import org.carbon.grid.cluster.GloballyUniqueIdAllocator;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
@@ -28,13 +29,17 @@ import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.when;
 
 public class TransactionTest {
@@ -87,6 +92,30 @@ public class TransactionTest {
             txn.rollback();
             assertNotNull(line.resetReaderAndGetReadOnlyData());
             assertEquals(initialBuffer, line.resetReaderAndGetReadOnlyData());
+        }
+    }
+
+    @Test
+    public void testProcessMessagesAfterLock() throws IOException, NoSuchFieldException, IllegalAccessException, InterruptedException {
+        ByteBuf bufferToOverrideWith = newRandomBuffer();
+        CountDownLatch finishedHandleMessage = new CountDownLatch(1);
+        try (InternalCacheImpl cache = new InternalCacheImpl(mockNodeIdProvider((short)123), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(22344), mockIdAllocatorProvider()) {
+            @Override
+            public void handleResponse(Message.Response response) {
+                super.handleResponse(response);
+                finishedHandleMessage.countDown();
+            }
+        }) {
+            CacheLine line = putNewEmptyCacheLineIntoCache(cache);
+            TransactionImpl txn = (TransactionImpl) cache.newTransaction();
+            line.lock();
+            txn.addToLockedLines(line.getId());
+            Message msg = new Message.PUTX(123456789, (short) 999, line.getId(), line.getVersion() + 1, Collections.emptySet(), bufferToOverrideWith);
+            assertEquals(Unpooled.EMPTY_BUFFER, line.resetReaderAndGetReadOnlyData());
+            cache.comms.handleMessage(msg);
+            txn.rollback();
+            assertTrue(finishedHandleMessage.await(555, TimeUnit.SECONDS));
+            assertEquals(bufferToOverrideWith, line.resetReaderAndGetReadOnlyData());
         }
     }
 

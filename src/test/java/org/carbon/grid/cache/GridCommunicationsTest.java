@@ -92,14 +92,16 @@ public class GridCommunicationsTest {
                 assertEquals(1, getBacklogMap(comm).size());
                 ConcurrentLinkedQueue<Message> backlog = backlogMap.get(comm.hashNodeIdCacheLineId(ack1.sender, ack1.lineId));
                 assertNotNull(backlog);
-                assertEquals(0, backlog.size());
+                // ack2 remains in the backlog until it finished processing
+                assertEquals(1, backlog.size());
 
                 comm.handleMessage(ack1);
                 assertEquals(1, backlogMap.size());
-                assertEquals(1, backlog.size());
+                assertEquals(2, backlog.size());
 
                 latch.countDown();
                 assertTrue(threadFinishedHandling.await(TIMEOUT, TimeUnit.SECONDS));
+                assertEquals(0, backlog.size());
 
                 assertEquals(2, count.get());
                 backlog = backlogMap.get(comm.hashNodeIdCacheLineId(ack1.sender, ack1.lineId));
@@ -142,11 +144,12 @@ public class GridCommunicationsTest {
                 assertTrue(threadEnteredHandler.await(TIMEOUT, TimeUnit.SECONDS));
                 backlog = backlogMap.get(comm.hashNodeIdCacheLineId(sender, lineId));
                 assertNotNull(backlog);
-                assertEquals(0, backlog.size());
-                assertTrue(comm.addToCacheLineBacklog(ack1));
                 assertEquals(1, backlog.size());
+                assertTrue(comm.addToCacheLineBacklog(ack1));
+                assertEquals(2, backlog.size());
                 threadBlocking.countDown();
                 assertTrue(threadFinishedProcessing.await(TIMEOUT, TimeUnit.SECONDS));
+                assertEquals(0, backlog.size());
                 backlog = backlogMap.get(comm.hashNodeIdCacheLineId(sender, lineId));
                 assertNull(backlog);
             }
@@ -156,7 +159,7 @@ public class GridCommunicationsTest {
     }
 
     @Test
-    public void testReactToResponse() throws IOException, InterruptedException, NoSuchFieldException, IllegalAccessException {
+    public void testReactToResponse() throws IOException, NoSuchFieldException, IllegalAccessException {
         short sender = 444;
         short newOwner = 888;
         long lineId = 1234567890;

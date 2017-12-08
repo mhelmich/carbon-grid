@@ -262,6 +262,32 @@ class GridCommunications implements Closeable {
         }
     }
 
+    // This method is called after a transaction is rolled back or committed.
+    // While a transaction locks cache lines, all incoming messages are queued up.
+    // After these cache lines are released, someone needs to process these messages though.
+    // This method takes a thread out of the worker group and goes through the backlog
+    // of messages asynchronously for the caller of this method.
+    void processMessagesForId(long cacheLineId) {
+        workerGroup.submit(() -> {
+            long backlogHash = hashNodeIdCacheLineId((short)0, cacheLineId);
+            ConcurrentLinkedQueue<Message> backlog = cacheLineIdToBacklog.get(backlogHash);
+            if (backlog != null) {
+                while (backlog.peek() != null) {
+                    Message backlogMsg = backlog.poll();
+                    logger.info("{} processing backlog message {} with hash {}", myNodeId(), backlogMsg, backlogHash);
+                    innerHandleMessage(backlogMsg);
+                    // remove the hash if the backlog is empty
+                    // this runs atomically
+                    removeIfEmpty(backlogHash, cacheLineIdToBacklog);
+                }
+
+                // remove the hash if the backlog is empty
+                // this runs atomically
+                removeIfEmpty(backlogHash, cacheLineIdToBacklog);
+            }
+        });
+    }
+
     ////////////////////////////////////////////
     ///////////////////////////////////
     /////////////////////////////
@@ -271,27 +297,45 @@ class GridCommunications implements Closeable {
         long backlogHash = hashNodeIdCacheLineId(msg.sender, msg.lineId);
         // this queue acts as token to indicate that a different thread is processing a message for this cache line
         // is also buffers all incoming messages for this cache line in a queue
-        ConcurrentLinkedQueue<Message> backlog = cacheLineIdToBacklog.putIfAbsent(backlogHash, new ConcurrentLinkedQueue<>());
+        ConcurrentLinkedQueue<Message> newBacklog = new ConcurrentLinkedQueue<>();
+        // always add yourself to the queue first to preserve order
+        newBacklog.add(msg);
+        // the map now contains a queue with yourself first in line
+        ConcurrentLinkedQueue<Message> backlog = cacheLineIdToBacklog.putIfAbsent(backlogHash, newBacklog);
         if (backlog == null) {
-            logger.info("{} [handleMessage] {} with hash {}", myNodeId(), msg, backlogHash);
-            // go ahead and process
-            innerHandleMessage(msg);
+            try {
+                logger.info("{} [handleMessage] {} with hash {}", myNodeId(), msg, backlogHash);
+                // go ahead and process the message out of the queue
+                // just a reminder: the message passed in the method definition is the first message in the backlog
+                // sigh ... concurrency is hard
+                innerHandleMessage(newBacklog.peek());
+                newBacklog.poll();
 
-            // after processing this particular message went down well,
-            // this thread is somewhat responsible for cleaning out the backlog of messages it caused
-            backlog = cacheLineIdToBacklog.get(backlogHash);
-            while (backlog.peek() != null) {
-                Message backlogMsg = backlog.poll();
-                logger.info("{} processing backlog message {} with hash {}", myNodeId(), backlogMsg, backlogHash);
-                innerHandleMessage(backlogMsg);
+                // after processing this particular message went down well,
+                // this thread is somewhat responsible for cleaning out the backlog of messages it caused
+                while (newBacklog.peek() != null) {
+                    Message backlogMsg = newBacklog.poll();
+                    logger.info("{} processing backlog message {} with hash {}", myNodeId(), backlogMsg, backlogHash);
+                    innerHandleMessage(backlogMsg);
+                    // remove the hash if the backlog is empty
+                    // this runs atomically
+                    removeIfEmpty(backlogHash, cacheLineIdToBacklog);
+                }
+
                 // remove the hash if the backlog is empty
                 // this runs atomically
                 removeIfEmpty(backlogHash, cacheLineIdToBacklog);
+            } catch (ShouldNotProcessException xcp) {
+                // while this is not the fine british way,
+                // I needed a way to indicate that I don't want to process this message
+                // and this exception is it
+                // this exception is thrown be the prehandler in case the line is locked for example
+                // all incoming messages after the first will end up in the backlog anyways and
+                // never see the handler
+                // in other words: this exception is only thrown for the first incoming message
+                // for a locked line (probably locked by the API)
+                logger.info("Queueing up message for reason: " + xcp.getMessage());
             }
-
-            // remove the hash if the backlog is empty
-            // this runs atomically
-            removeIfEmpty(backlogHash, cacheLineIdToBacklog);
         } else {
             backlog.add(msg);
             logger.info("{} putting message into the backlog {} with hash {}", myNodeId(), msg, backlogHash);

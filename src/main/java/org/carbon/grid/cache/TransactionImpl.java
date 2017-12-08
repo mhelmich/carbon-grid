@@ -102,6 +102,7 @@ class TransactionImpl implements Transaction {
             if (line != null) {
                 try {
                     line.unlock();
+                    cache.processMessagesForId(lineId);
                 } catch (Exception xcp) {
                     logger.error("While releasing buffers in a txn line with id " + lineId + " disappeared", xcp);
                 }

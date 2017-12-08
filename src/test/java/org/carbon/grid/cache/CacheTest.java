@@ -426,7 +426,7 @@ public class CacheTest {
     }
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
-        return new InternalCacheImpl(mockNodeIdProvider(nodeId), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(port), mockIdAllocatorProvider());
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockCacheConfig(), mockServerConfig(port), mockIdAllocatorProvider());
     }
 
     private CarbonGrid.ServerConfig mockServerConfig(int port) {
@@ -434,6 +434,13 @@ public class CacheTest {
         when(sc.port()).thenReturn(port);
         when(sc.timeout()).thenReturn(60);
         return sc;
+    }
+
+    private CarbonGrid.CacheConfig mockCacheConfig() {
+        CarbonGrid.CacheConfig cc = Mockito.mock(CarbonGrid.CacheConfig.class);
+        when(cc.maxAvailableMemory()).thenReturn(Long.MAX_VALUE);
+        when(cc.maxCacheLineSize()).thenReturn(Integer.MAX_VALUE);
+        return cc;
     }
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {

@@ -139,11 +139,19 @@ class InternalCacheImpl implements InternalCache {
         }
     }
 
-    private void preHandler(Message msg) {
+    // this method returns a boolean indicating whether this message
+    // should be processed right away or whether it was queued up for later
+    private boolean preHandler(Message msg) throws ShouldNotProcessException {
         long lineId = msg.lineId;
         CacheLine line = innerGetLineLocally(lineId);
         if (line != null && line.isLocked()) {
-            comms.addToCacheLineBacklog(msg);
+            // throw an exception indicating that this message should remain in the backlog
+            // while this is not great, it's pretty effective (code-writing-wise)
+            // this exception bridges multiple levels of abstraction and is only necessary
+            // for the first message for a cache line that's coming here
+            throw new ShouldNotProcessException("Line is locked");
+        } else {
+            return true;
         }
     }
 
@@ -243,19 +251,36 @@ class InternalCacheImpl implements InternalCache {
 
     private void handlePUTX(Message.PUTX putx) {
         logger.info("cache handler {} putx: {}", this, putx);
-        final CacheLine oldLine = shared.get(putx.lineId);
+        CacheLine oldLine = shared.get(putx.lineId);
         if (oldLine == null) {
-            // looks like I didn't have this log line before
-            // pure luxury, I can create a brand new object
-            CacheLine newLine = new CacheLine(
-                    putx.lineId,
-                    putx.version,
-                    myNodeId(),
-                    putx.sharers.isEmpty() ? CacheLineState.EXCLUSIVE : CacheLineState.OWNED,
-                    putx.data
-            );
-            newLine.setSharers(putx.sharers);
-            owned.put(putx.lineId, newLine);
+            oldLine = owned.get(putx.lineId);
+            if (oldLine == null) {
+                // looks like I didn't have this log line before
+                // pure luxury, I can create a brand new object
+                CacheLine newLine = new CacheLine(
+                        putx.lineId,
+                        putx.version,
+                        myNodeId(),
+                        putx.sharers.isEmpty() ? CacheLineState.EXCLUSIVE : CacheLineState.OWNED,
+                        putx.data
+                );
+                newLine.setSharers(putx.sharers);
+                owned.put(putx.lineId, newLine);
+            } else {
+                // promote line from shared to owned
+                // It's somewhat important to keep the same object around
+                // (as opposed to creating a new one and tossing the old one away).
+                // One reason for that is that there might be other threads
+                // waiting to grab a lock on this line.
+                // If we switch the objects under the waiters all hell will break loose.
+                oldLine.setOwner(myNodeId());
+                oldLine.setSharers(putx.sharers);
+                oldLine.setState(
+                        oldLine.getSharers().isEmpty() ? CacheLineState.EXCLUSIVE : CacheLineState.OWNED
+                );
+                oldLine.setData(putx.data);
+                oldLine.setVersion(putx.version);
+            }
         } else {
             // promote line from shared to owned
             // It's somewhat important to keep the same object around
@@ -583,6 +608,13 @@ class InternalCacheImpl implements InternalCache {
             }
         }
         return myNodeId;
+    }
+
+    // this is called after a transaction is rolled back or committed
+    // while a transaction locks cache lines, all incoming messages are queued up
+    // after these cache lines are released, someone needs to process these messages
+    void processMessagesForId(long cacheLineId) {
+        comms.processMessagesForId(cacheLineId);
     }
 
     @Override
