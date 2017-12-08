@@ -1,9 +1,17 @@
 # test config
 server:
+    # carbon grid service port
     port: 4567
+    # carbon grid service port timeout
+    # (should be higher than the consul timeout)
     timeout: 60
 consul:
+    # host of consul
     host: "localhost"
+    # port of consul
     port: 8500
+    # timeout of talking to consul in secs
     timeout: 10
+    # number of failed attempts to reach consul
+    # before the carbon grid node shuts itself down
     numCheckinFailuresToShutdown: 3
