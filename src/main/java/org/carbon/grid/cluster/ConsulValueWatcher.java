@@ -50,7 +50,6 @@ class ConsulValueWatcher<T> implements Closeable {
         public void onComplete(ConsulResponse<List<T>> consulResponse) {
             if (consulResponse.isKnownLeader()) {
                 if (watcherIsRunning.get()) {
-                    logger.info("onComplete with latest {} and response {}", latestIndex.get(), consulResponse.getIndex());
                     latestIndex.set(consulResponse.getIndex());
                     List<T> responseList = consulResponse.getResponse();
                     if (responseList != null && !responseList.equals(latestResponseList.get())) {
