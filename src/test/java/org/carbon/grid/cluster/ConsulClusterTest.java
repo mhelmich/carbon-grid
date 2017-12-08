@@ -17,10 +17,9 @@
 package org.carbon.grid.cluster;
 
 import org.apache.commons.lang3.tuple.Pair;
-import org.carbon.grid.CarbonGrid;
+import org.carbon.grid.BaseTest;
 import org.carbon.grid.cache.PeerChangeConsumer;
 import org.junit.Test;
-import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -36,10 +35,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.when;
 
-public class ConsulClusterTest {
-    private final static int TIMEOUT_SECS = 555;
+public class ConsulClusterTest extends BaseTest {
     private final PeerChangeConsumer emptyPeerHandler = m -> {};
 
     @Test
@@ -127,20 +124,5 @@ public class ConsulClusterTest {
 
     private ConsulCluster mockConsulCluster(int servicePort, PeerChangeConsumer peerChangeConsumer) {
         return new ConsulCluster(mockServerConfig(servicePort), mockConsulConfig(), peerChangeConsumer);
-    }
-
-    private CarbonGrid.ServerConfig mockServerConfig(int port) {
-        CarbonGrid.ServerConfig sc = Mockito.mock(CarbonGrid.ServerConfig.class);
-        when(sc.port()).thenReturn(port);
-        when(sc.timeout()).thenReturn(60);
-        return sc;
-    }
-
-    private CarbonGrid.ConsulConfig mockConsulConfig() {
-        CarbonGrid.ConsulConfig sc = Mockito.mock(CarbonGrid.ConsulConfig.class);
-        when(sc.host()).thenReturn("localhost");
-        when(sc.port()).thenReturn(8500);
-        when(sc.timeout()).thenReturn(60);
-        return sc;
     }
 }

@@ -19,16 +19,13 @@ package org.carbon.grid.cache;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.util.internal.SocketUtils;
-import org.carbon.grid.CarbonGrid;
+import org.carbon.grid.BaseTest;
 import org.carbon.grid.cluster.GloballyUniqueIdAllocator;
 import org.junit.Test;
-import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Random;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
@@ -37,10 +34,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.when;
 
-public class CacheTest {
-    private final Random random = new Random();
+public class CacheTest extends BaseTest {
     private static final AtomicLong idAllocator = new AtomicLong(0);
 
     @Test
@@ -394,14 +389,6 @@ public class CacheTest {
         return new ThreeCaches(internalCache1, internalCache2, internalCache3);
     }
 
-    private ByteBuf newRandomBuffer() {
-        byte[] bites = new byte[1024];
-        random.nextBytes(bites);
-        ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer(1024);
-        buffer.writeBytes(bites);
-        return buffer;
-    }
-
     private void releaseByteBuf(ByteBuf... buf) {
         for (ByteBuf b : buf) {
             if (b != null) {
@@ -427,20 +414,6 @@ public class CacheTest {
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
         return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockCacheConfig(), mockServerConfig(port), mockIdAllocatorProvider());
-    }
-
-    private CarbonGrid.ServerConfig mockServerConfig(int port) {
-        CarbonGrid.ServerConfig sc = Mockito.mock(CarbonGrid.ServerConfig.class);
-        when(sc.port()).thenReturn(port);
-        when(sc.timeout()).thenReturn(60);
-        return sc;
-    }
-
-    private CarbonGrid.CacheConfig mockCacheConfig() {
-        CarbonGrid.CacheConfig cc = Mockito.mock(CarbonGrid.CacheConfig.class);
-        when(cc.maxAvailableMemory()).thenReturn(Long.MAX_VALUE);
-        when(cc.maxCacheLineSize()).thenReturn(Integer.MAX_VALUE);
-        return cc;
     }
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {

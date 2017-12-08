@@ -18,11 +18,9 @@ package org.carbon.grid.cluster;
 
 import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
-import org.carbon.grid.CarbonGrid;
+import org.carbon.grid.BaseTest;
 import org.junit.Test;
-import org.mockito.Mockito;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -33,13 +31,10 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-import static org.mockito.Mockito.when;
 
-public class ConsulClientTest {
-    private final static int TIMEOUT_SECS = 555;
-
+public class ConsulClientTest extends BaseTest {
     @Test
-    public void testRegister() throws IOException {
+    public void testRegister() {
         ScheduledExecutorService es = Executors.newScheduledThreadPool(1);
         try (ConsulClient client = new ConsulClient(mockConsulConfig(), es)) {
             assertEquals(ConsulCluster.MIN_NODE_ID, client.myNodeId());
@@ -103,13 +98,5 @@ public class ConsulClientTest {
             es.shutdown();
             consul.destroy();
         }
-    }
-
-    private CarbonGrid.ConsulConfig mockConsulConfig() {
-        CarbonGrid.ConsulConfig sc = Mockito.mock(CarbonGrid.ConsulConfig.class);
-        when(sc.host()).thenReturn("localhost");
-        when(sc.port()).thenReturn(8500);
-        when(sc.timeout()).thenReturn(60);
-        return sc;
     }
 }

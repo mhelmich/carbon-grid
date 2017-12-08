@@ -20,17 +20,15 @@ import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.ChannelFuture;
 import io.netty.util.internal.SocketUtils;
-import org.carbon.grid.CarbonGrid;
+import org.carbon.grid.BaseTest;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.junit.Test;
 import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
@@ -50,10 +48,7 @@ import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 
-public class GridCommunicationsTest {
-    private final static int TIMEOUT = 55;
-    private final Random random = new Random();
-
+public class GridCommunicationsTest extends BaseTest {
     @Test
     public void testBacklog() throws IOException, InterruptedException, NoSuchFieldException, IllegalAccessException {
         short sender = 444;
@@ -68,7 +63,7 @@ public class GridCommunicationsTest {
             count.incrementAndGet();
             threadEnteredHandler.countDown();
             if (resp.getMessageSequenceNumber() == Integer.MIN_VALUE) {
-                assertTrue(latch.await(TIMEOUT, TimeUnit.SECONDS));
+                assertTrue(latch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
             }
             return null;
         }).when(cacheMock).handleResponse(any(Message.Response.class));
@@ -87,7 +82,7 @@ public class GridCommunicationsTest {
                     threadFinishedHandling.countDown();
                     return null;
                 });
-                assertTrue(threadEnteredHandler.await(TIMEOUT, TimeUnit.SECONDS));
+                assertTrue(threadEnteredHandler.await(TIMEOUT_SECS, TimeUnit.SECONDS));
 
                 assertEquals(1, getBacklogMap(comm).size());
                 ConcurrentLinkedQueue<Message> backlog = backlogMap.get(comm.hashNodeIdCacheLineId(ack1.sender, ack1.lineId));
@@ -100,7 +95,7 @@ public class GridCommunicationsTest {
                 assertEquals(2, backlog.size());
 
                 latch.countDown();
-                assertTrue(threadFinishedHandling.await(TIMEOUT, TimeUnit.SECONDS));
+                assertTrue(threadFinishedHandling.await(TIMEOUT_SECS, TimeUnit.SECONDS));
                 assertEquals(0, backlog.size());
 
                 assertEquals(2, count.get());
@@ -122,7 +117,7 @@ public class GridCommunicationsTest {
         CountDownLatch threadFinishedProcessing = new CountDownLatch(1);
         doAnswer(inv -> {
             threadEnteredHandler.countDown();
-            threadBlocking.await(TIMEOUT, TimeUnit.SECONDS);
+            threadBlocking.await(TIMEOUT_SECS, TimeUnit.SECONDS);
             return null;
         }).when(cacheMock).handleResponse(any(Message.Response.class));
 
@@ -141,14 +136,14 @@ public class GridCommunicationsTest {
                     return null;
                 });
 
-                assertTrue(threadEnteredHandler.await(TIMEOUT, TimeUnit.SECONDS));
+                assertTrue(threadEnteredHandler.await(TIMEOUT_SECS, TimeUnit.SECONDS));
                 backlog = backlogMap.get(comm.hashNodeIdCacheLineId(sender, lineId));
                 assertNotNull(backlog);
                 assertEquals(1, backlog.size());
                 assertTrue(comm.addToCacheLineBacklog(ack1));
                 assertEquals(2, backlog.size());
                 threadBlocking.countDown();
-                assertTrue(threadFinishedProcessing.await(TIMEOUT, TimeUnit.SECONDS));
+                assertTrue(threadFinishedProcessing.await(TIMEOUT_SECS, TimeUnit.SECONDS));
                 assertEquals(0, backlog.size());
                 backlog = backlogMap.get(comm.hashNodeIdCacheLineId(sender, lineId));
                 assertNull(backlog);
@@ -213,7 +208,7 @@ public class GridCommunicationsTest {
         InternalCache cacheMock666 = Mockito.mock(InternalCache.class);
         doAnswer(inv -> {
             Message.Request req = inv.getArgumentAt(0, Message.Request.class);
-            assertTrue(blockAckHandler.await(TIMEOUT, TimeUnit.SECONDS));
+            assertTrue(blockAckHandler.await(TIMEOUT_SECS, TimeUnit.SECONDS));
             return new Message.ACK(req.messageSequenceNumber, sender666, lineId);
         }).when(cacheMock666).handleRequest(any(Message.Request.class));
 
@@ -242,9 +237,9 @@ public class GridCommunicationsTest {
                     ));
 
                     Message.GET get = new Message.GET(sender555, lineId);
-                    comm555.broadcast(get, MessageType.PUT).get(TIMEOUT, TimeUnit.SECONDS);
+                    comm555.broadcast(get, MessageType.PUT).get(TIMEOUT_SECS, TimeUnit.SECONDS);
 
-                    assertTrue(receivedPut.await(TIMEOUT, TimeUnit.SECONDS));
+                    assertTrue(receivedPut.await(TIMEOUT_SECS, TimeUnit.SECONDS));
                     assertEquals(1, responsesReceived.get());
                     blockAckHandler.countDown();
                 }
@@ -275,23 +270,8 @@ public class GridCommunicationsTest {
         return (LoadingCache<Short, TcpGridClient>) field.get(comms);
     }
 
-    private ByteBuf newRandomBuffer() {
-        byte[] bites = new byte[1024];
-        random.nextBytes(bites);
-        ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer(1024);
-        buffer.writeBytes(bites);
-        return buffer;
-    }
-
     private GridCommunications mockGridCommunications(int myNodeId, int port, InternalCache internalCache) {
         return new GridCommunications(mockNodeIdProvider((short)myNodeId), mockServerConfig(port), internalCache);
-    }
-
-    private CarbonGrid.ServerConfig mockServerConfig(int port) {
-        CarbonGrid.ServerConfig sc = Mockito.mock(CarbonGrid.ServerConfig.class);
-        when(sc.port()).thenReturn(port);
-        when(sc.timeout()).thenReturn(60);
-        return sc;
     }
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {

@@ -18,21 +18,17 @@ package org.carbon.grid.cache;
 
 import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
+import org.carbon.grid.BaseTest;
 import org.carbon.grid.CarbonGrid;
 import org.carbon.grid.cluster.GloballyUniqueIdAllocator;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
-import org.junit.AfterClass;
 import org.junit.Test;
 import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.Random;
-import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -40,11 +36,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.when;
 
-public class TransactionTest {
-    private static final Set<ByteBuf> buffers = new HashSet<>();
-    private final Random random = new Random();
+public class TransactionTest extends BaseTest {
     private static final AtomicLong idAllocator = new AtomicLong(0);
 
     @Test
@@ -145,25 +138,6 @@ public class TransactionTest {
         return id;
     }
 
-    private ByteBuf newRandomBuffer() {
-        byte[] bites = new byte[1024];
-        random.nextBytes(bites);
-        ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer(1024);
-        buffer.writeBytes(bites);
-        buffers.add(buffer);
-        return buffer;
-    }
-
-    // not the nicest but effective
-    @AfterClass
-    public static void clearBuffers() {
-        for (ByteBuf buf : buffers) {
-            if (buf.refCnt() > 0) {
-                buf.release();
-            }
-        }
-    }
-
     @SuppressWarnings("unchecked")
     private NonBlockingHashMapLong<CacheLine> getOwnedCacheLines(InternalCacheImpl cache) throws NoSuchFieldException, IllegalAccessException {
         Field field = InternalCacheImpl.class.getDeclaredField("owned");
@@ -177,13 +151,6 @@ public class TransactionTest {
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
         return new InternalCacheImpl(mockNodeIdProvider(nodeId), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(port), mockIdAllocatorProvider());
-    }
-
-    private CarbonGrid.ServerConfig mockServerConfig(int port) {
-        CarbonGrid.ServerConfig sc = Mockito.mock(CarbonGrid.ServerConfig.class);
-        when(sc.port()).thenReturn(port);
-        when(sc.timeout()).thenReturn(60);
-        return sc;
     }
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {
