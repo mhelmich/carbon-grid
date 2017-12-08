@@ -368,7 +368,7 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public int getMaxCacheLineSize() {
-        return Integer.MAX_VALUE;
+        return cacheConfig.maxCacheLineSize();
     }
 
     @Override

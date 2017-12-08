@@ -237,6 +237,6 @@ public final class CarbonGrid implements Closeable {
 
     public interface CacheConfig {
         Long maxAvailableMemory();
-        Long maxCacheLineSize();
+        Integer maxCacheLineSize();
     }
 }
