@@ -71,12 +71,14 @@ class InternalCacheImpl implements InternalCache {
     private final Provider<Short> myNodeIdProvider;
     private short myNodeId = -1;
     private final CarbonGrid.ServerConfig serverConfig;
+    private final CarbonGrid.CacheConfig cacheConfig;
     private final Provider<GloballyUniqueIdAllocator> idAllocatorProvider;
 
     @Inject
-    InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.ServerConfig serverConfig, Provider<GloballyUniqueIdAllocator> idAllocatorProvider) {
+    InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.CacheConfig cacheConfig, CarbonGrid.ServerConfig serverConfig, Provider<GloballyUniqueIdAllocator> idAllocatorProvider) {
         this.myNodeIdProvider = myNodeIdProvider;
         this.serverConfig = serverConfig;
+        this.cacheConfig = cacheConfig;
         this.idAllocatorProvider = idAllocatorProvider;
         this.comms = new GridCommunications(myNodeIdProvider, serverConfig, this);
     }

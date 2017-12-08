@@ -147,7 +147,7 @@ public class TransactionTest {
     }
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
-        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockServerConfig(port), mockIdAllocatorProvider());
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(port), mockIdAllocatorProvider());
     }
 
     private CarbonGrid.ServerConfig mockServerConfig(int port) {
