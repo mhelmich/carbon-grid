@@ -15,3 +15,9 @@ consul:
     # number of failed attempts to reach consul
     # before the carbon grid node shuts itself down
     numCheckinFailuresToShutdown: 3
+cache:
+    # amount of memory that carbon grid will use on this machine in bytes
+    # this refers to the off-heap memory carbon grid uses
+    maxAvailableMemory: 1073741824
+    # the max size of a single cache line in bytes
+    maxCacheLineSize: 32768

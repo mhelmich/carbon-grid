@@ -214,9 +214,7 @@ public final class CarbonGrid implements Closeable {
         protected void configure() {
             bind(ServerConfig.class).toInstance(configProvider.bind("server", ServerConfig.class));
             bind(ConsulConfig.class).toInstance(configProvider.bind("consul", ConsulConfig.class));
-            if (configProvider.allConfigurationAsProperties().contains("cache")) {
-                bind(CacheConfig.class).toInstance(configProvider.bind("cache", CacheConfig.class));
-            }
+            bind(CacheConfig.class).toInstance(configProvider.bind("cache", CacheConfig.class));
         }
     }
 
@@ -238,7 +236,7 @@ public final class CarbonGrid implements Closeable {
     }
 
     public interface CacheConfig {
-        Long availableMemory();
-        Long maxItemSize();
+        Long maxAvailableMemory();
+        Long maxCacheLineSize();
     }
 }
