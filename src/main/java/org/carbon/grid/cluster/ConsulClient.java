@@ -21,15 +21,12 @@ import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
 import com.orbitz.consul.ConsulException;
 import com.orbitz.consul.NotRegisteredException;
-import com.orbitz.consul.async.ConsulResponseCallback;
-import com.orbitz.consul.model.ConsulResponse;
 import com.orbitz.consul.model.health.Service;
 import com.orbitz.consul.model.health.ServiceHealth;
 import com.orbitz.consul.model.kv.Value;
 import com.orbitz.consul.model.session.ImmutableSession;
 import com.orbitz.consul.model.session.Session;
 import com.orbitz.consul.option.ImmutablePutOptions;
-import com.orbitz.consul.option.ImmutableQueryOptions;
 import com.orbitz.consul.option.QueryOptions;
 import io.netty.util.internal.SocketUtils;
 import org.carbon.grid.CarbonGrid;
@@ -38,54 +35,33 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
-import java.io.IOException;
-import java.math.BigInteger;
 import java.net.InetSocketAddress;
-import java.net.SocketTimeoutException;
-import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 class ConsulClient implements Closeable {
-
-    static class ConsulValue {
-        final String s;
-        private final long modifyIndex;
-
-        ConsulValue(String s, long modifyIndex) {
-            this.s = s;
-            this.modifyIndex = modifyIndex;
-        }
-
-        long asLong() {
-            return Long.valueOf(s);
-        }
-    }
-
     private final static Logger logger = LoggerFactory.getLogger(ConsulClient.class);
 
     final static String SERVICE_NAME = "carbon-grid";
     private final static short MIN_NODE_ID = 500;
     private final static int NUM_RETRIES = 10;
 
+    private final String consulSessionName = "session-" + UUID.randomUUID().toString();
+    private final LinkedList<ConsulValueWatcher<?>> watchers = new LinkedList<>();
+
     private final CarbonGrid.ConsulConfig consulConfig;
     private final ScheduledExecutorService executorService;
     private final Consul consul;
-    private final String consulSessionName = "session-" + UUID.randomUUID().toString();
     private final short myNodeId;
     private final String myNodeIdStr;
     private final String consulSessionId;
-
-    private final ConsulRequestCallback<ServiceHealth> healthRequestCallback;
 
     ConsulClient(CarbonGrid.ConsulConfig consulConfig, ScheduledExecutorService executorService) {
         this.consulConfig = consulConfig;
@@ -98,11 +74,6 @@ class ConsulClient implements Closeable {
         this.consulSessionId = createConsulSession(consulConfig);
         this.myNodeId = reserveMyNodeId();
         this.myNodeIdStr = String.valueOf(this.myNodeId);
-        this.healthRequestCallback = (index, responseCallback) -> {
-            QueryOptions params = generateBlockingQueryOptions(index, 10);
-            logger.info("calling consul with index {} and params {}", latestIndex.get(), params);
-            consul.healthClient().getHealthyServiceInstances(SERVICE_NAME, params, healthResponseCallback);
-        };
     }
 
     private String createConsulSession(CarbonGrid.ConsulConfig consulConfig) {
@@ -149,8 +120,32 @@ class ConsulClient implements Closeable {
                 consulConfig.timeout() / 2,
                 TimeUnit.SECONDS
         );
+    }
 
-        runNodeHealthListener();
+    void registerNodeHealthWatcher(PeerChangeConsumer peerChangeConsumer) {
+        // this method registers a callback with consul
+        // every time the health of a node changes, consul sends back the entire state (!!!)
+        // that means two things:
+        // a) the peerChangeConsumer needs to be really fast
+        // b) the peerChangeConsumer needs to dedup existing nodes from new nodes (by putting the into a map or something)
+        ConsulValueWatcher<ServiceHealth> serviceHealthWatcher = new ConsulValueWatcher<>(executorService,
+                (index, responseCallback) -> {
+                    QueryOptions params = ConsulValueWatcher.generateBlockingQueryOptions(index, 10);
+                    consul.healthClient().getHealthyServiceInstances(SERVICE_NAME, params, responseCallback);
+                },
+                (list) -> {
+                    ImmutableMap.Builder<Short, InetSocketAddress> mb = ImmutableMap.builder();
+                    for (ServiceHealth sh : list) {
+                        Service s = sh.getService();
+                        mb.put(Short.valueOf(s.getId()), SocketUtils.socketAddress(s.getAddress(), s.getPort()));
+                    }
+
+                    ImmutableMap<Short, InetSocketAddress> m = mb.build();
+                    peerChangeConsumer.accept(m);
+                }
+        );
+
+        watchers.add(serviceHealthWatcher);
     }
 
     Map<Short, InetSocketAddress> getHealthyNodes() {
@@ -299,21 +294,6 @@ class ConsulClient implements Closeable {
         return consul.keyValueClient().putValue(key, value, 0L, ImmutablePutOptions.builder().cas(oldValue.modifyIndex).build());
     }
 
-    // this method registers a callback with consul
-    // every time the health of a node changes, consul sends back the entire state (!!!)
-    // that means two things:
-    // a) the peerChangeConsumer needs to be really fast
-    // b) the peerChangeConsumer needs to dedup existing nodes from new nodes (by putting the into a map or something)
-    boolean addPeerChangeConsumer(PeerChangeConsumer peerChangeConsumer) {
-        boolean added = peerChangeConsumers.add(peerChangeConsumer);
-        if (latestServiceHealthMap.get() != null) {
-            peerChangeConsumer.accept(latestServiceHealthMap.get());
-        }
-        return added;
-    }
-
-    private final List<PeerChangeConsumer> peerChangeConsumers = new ArrayList<>();
-
     short myNodeId() {
         return myNodeId;
     }
@@ -328,9 +308,9 @@ class ConsulClient implements Closeable {
     }
 
     @Override
-    public void close() throws IOException {
+    public void close() {
         try {
-            listenersAreRunning.set(false);
+            watchers.forEach(ConsulValueWatcher::close);
         } finally {
             try {
                 consul.agentClient().deregister(myNodeIdStr);
@@ -349,74 +329,17 @@ class ConsulClient implements Closeable {
         return "myNodeId: " + myNodeIdStr + " sessionId: " + consulSessionId + " consulSessionName: " + consulSessionName;
     }
 
-    private final AtomicBoolean listenersAreRunning = new AtomicBoolean(true);
-    private final AtomicReference<BigInteger> latestIndex = new AtomicReference<>(null);
-    private final AtomicReference<ImmutableMap<Short, InetSocketAddress>> latestServiceHealthMap = new AtomicReference<>(null);
+    static class ConsulValue {
+        final String s;
+        private final long modifyIndex;
 
-    private final ConsulResponseCallback<List<ServiceHealth>> healthResponseCallback = new ConsulResponseCallback<List<ServiceHealth>>() {
-        @Override
-        public void onComplete(ConsulResponse<List<ServiceHealth>> consulResponse) {
-            logger.info("onComplete called with index {}", consulResponse.getIndex());
-            if (consulResponse.isKnownLeader()) {
-                if (listenersAreRunning.get()) {
-                    latestIndex.set(consulResponse.getIndex());
-                    if (consulResponse.getResponse() != null) {
-                        ImmutableMap.Builder<Short, InetSocketAddress> mb = ImmutableMap.builder();
-                        for (ServiceHealth sh : consulResponse.getResponse()) {
-                            Service s = sh.getService();
-                            mb.put(Short.valueOf(s.getId()), SocketUtils.socketAddress(s.getAddress(), s.getPort()));
-                        }
-
-                        ImmutableMap<Short, InetSocketAddress> m = mb.build();
-                        if (!m.equals(latestServiceHealthMap.get())) {
-                            latestServiceHealthMap.set(m);
-                            for (PeerChangeConsumer pcc : peerChangeConsumers) {
-                                pcc.accept(m);
-                            }
-                        }
-
-                    }
-                    runNodeHealthListener();
-                }
-            } else {
-                onFailure(new ConsulException("Consul cluster has no elected leader"));
-            }
+        ConsulValue(String s, long modifyIndex) {
+            this.s = s;
+            this.modifyIndex = modifyIndex;
         }
 
-        @Override
-        public void onFailure(Throwable throwable) {
-            if (listenersAreRunning.get()) {
-                logger.error("", throwable);
-                if (!SocketTimeoutException.class.equals(throwable.getClass())) {
-                    logger.error("", throwable);
-                }
-                executorService.schedule(ConsulClient.this::runNodeHealthListener, 3, TimeUnit.SECONDS);
-            }
-        }
-    };
-
-    private void runNodeHealthListener() {
-        this.healthRequestCallback.accept(latestIndex.get(), healthResponseCallback);
-    }
-
-    private QueryOptions generateBlockingQueryOptions(BigInteger index, int blockSeconds) {
-        return generateBlockingQueryOptions(index, blockSeconds, QueryOptions.BLANK);
-    }
-
-    private QueryOptions generateBlockingQueryOptions(BigInteger index, int blockSeconds, QueryOptions queryOptions) {
-        if (index == null) {
-            return QueryOptions.BLANK;
-        } else {
-            return ImmutableQueryOptions.builder()
-                    .from(QueryOptions.blockSeconds(blockSeconds, index).build())
-                    .token(queryOptions.getToken())
-                    .consistencyMode(queryOptions.getConsistencyMode())
-                    .near(queryOptions.getNear())
-                    .datacenter(queryOptions.getDatacenter())
-                    .build();
+        long asLong() {
+            return Long.valueOf(s);
         }
     }
-
-    @FunctionalInterface
-    interface ConsulRequestCallback<V> extends BiConsumer<BigInteger, ConsulResponseCallback<List<V>>> { }
 }

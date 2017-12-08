@@ -81,8 +81,6 @@ public class ConsulClientTest {
                             }
                         }) {
                             assertEquals((short)506, client123.myNodeId());
-                        } catch (IOException e) {
-                            fail();
                         }
                     }
             );
@@ -98,8 +96,6 @@ public class ConsulClientTest {
                             }
                         }) {
                             assertEquals((short)503, client456.myNodeId());
-                        } catch (IOException e) {
-                            fail();
                         }
                     }
             );

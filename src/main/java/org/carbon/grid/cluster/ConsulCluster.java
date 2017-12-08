@@ -84,14 +84,9 @@ class ConsulCluster implements Cluster {
     ConsulCluster(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig, PeerChangeConsumer peerChangeConsumer) {
         // this executor service that runs all sorts little threads
         // id allocation, health checks
-        this.executorService = Executors.newScheduledThreadPool(2, new DefaultThreadFactory("consul-session-group"));
+        this.executorService = Executors.newScheduledThreadPool(4, new DefaultThreadFactory("consul-group"));
         this.consulClient = new ConsulClient(consulConfig, executorService);
         this.myNodeId = consulClient.myNodeId();
-        this.consulClient.addPeerChangeConsumer(peerChangeConsumer);
-        finishBootstrappingCluster(serverConfig, consulConfig);
-    }
-
-    private void finishBootstrappingCluster(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig) {
         // this method internally uses the executor service
         // beware to create the thing before calling into register
         consulClient.registerHealthCheckJobs(serverConfig.port(), (xcp) -> {
@@ -99,6 +94,7 @@ class ConsulCluster implements Cluster {
             logger.error("", xcp);
             // TODO -- build death pill logic here
         });
+        consulClient.registerNodeHealthWatcher(peerChangeConsumer);
         setDefaultCacheLineIdSeed();
         triggerGloballyUniqueIdAllocator();
         this.isUp.set(true);
