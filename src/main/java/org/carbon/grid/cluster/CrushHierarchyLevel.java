@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.carbon.grid.cluster.crush;
+package org.carbon.grid.cluster;
 
 enum CrushHierarchyLevel {
     ROOT(1),

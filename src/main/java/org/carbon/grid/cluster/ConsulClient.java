@@ -149,12 +149,14 @@ class ConsulClient implements Closeable {
     }
 
     void registerNodeInfoWatcher() {
-        ConsulValueWatcher<com.google.common.base.Optional<Value>> nodeInfoWatcher = new ConsulValueWatcher<>(executorService,
+        ConsulValueWatcher<List<Value>> nodeInfoWatcher = new ConsulValueWatcher<>(executorService,
                 (index, responseCallback) -> {
                     QueryOptions params = ConsulValueWatcher.generateBlockingQueryOptions(index, 10);
-                    consul.keyValueClient().getValue("", params, responseCallback);
+                    consul.keyValueClient().getValues("", params, responseCallback);
                 },
-                (valueOptional) -> {}
+                (valueList) -> {
+                    logger.info("node info list: {}", valueList);
+                }
         );
         watchers.add(nodeInfoWatcher);
     }
