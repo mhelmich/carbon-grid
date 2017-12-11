@@ -24,7 +24,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-public class NodeInfo implements Serializable {
+class NodeInfo implements Serializable {
     private final static String SEPARATOR = ";";
     private final static String SET_SEPARATOR = ",";
     final short nodeId;
