@@ -148,14 +148,29 @@ class ConsulClient implements Closeable {
         watchers.add(serviceHealthWatcher);
     }
 
-    void registerNodeInfoWatcher() {
+    void registerNodeInfoWatcher(String keyPrefix, Consumer<List<NodeInfo>> nodeInfoConsumer) {
         ConsulValueWatcher<List<Value>> nodeInfoWatcher = new ConsulValueWatcher<>(executorService,
                 (index, responseCallback) -> {
                     QueryOptions params = ConsulValueWatcher.generateBlockingQueryOptions(index, 10);
-                    consul.keyValueClient().getValues("", params, responseCallback);
+                    consul.keyValueClient().getValues(keyPrefix, params, responseCallback);
                 },
-                (valueList) -> {
-                    logger.info("node info list: {}", valueList);
+                valueList -> {
+                    List<NodeInfo> nis = new LinkedList<>();
+                    for (Value v : valueList) {
+                        if (v.getValueAsString().isPresent()) {
+                            String nodeInfoStr = v.getValueAsString().get();
+                            if (!nodeInfoStr.isEmpty()) {
+                                NodeInfo ni = new NodeInfo(nodeInfoStr);
+                                nis.add(ni);
+                            } else {
+                                logger.warn("Key {} doesn't have a value", v.getKey());
+                            }
+                        } else {
+                            logger.warn("Key {} doesn't have a value", v.getKey());
+                        }
+                    }
+
+                    nodeInfoConsumer.accept(nis);
                 }
         );
         watchers.add(nodeInfoWatcher);

@@ -95,6 +95,9 @@ class ConsulCluster implements Cluster {
             // TODO -- build death pill logic here
         });
         consulClient.registerNodeHealthWatcher(peerChangeConsumer);
+        consulClient.registerNodeInfoWatcher(NODE_INFO_KEY_PREFIX, nodeInfos -> {
+
+        });
         setDefaultCacheLineIdSeed();
         triggerGloballyUniqueIdAllocator();
         this.isUp.set(true);
@@ -120,8 +123,8 @@ class ConsulCluster implements Cluster {
             if (!highestCacheLineIdOpt.isPresent()) throw new IllegalStateException("Can't allocate new cache line ids");
             highestCacheLineId = highestCacheLineIdOpt.get();
             if (highestCacheLineIdOpt.get().asLong() + numIdsToAllocate > Long.MAX_VALUE) throw new IllegalStateException("Can't allocate cache line id " + (highestCacheLineIdOpt.get().asLong() + numIdsToAllocate));
-            logger.info("Trying to allocate chunk {} - {}", highestCacheLineIdOpt.get().asLong(), highestCacheLineIdOpt.get().asLong() + numIdsToAllocate);
         } while (!consulClient.casValue(CACHE_LINE_ID_KEY, highestCacheLineId.asLong() + numIdsToAllocate, highestCacheLineId));
+        logger.info("Allocated chunk {} - {}", highestCacheLineId.asLong() - numIdsToAllocate, highestCacheLineId.asLong());
         return Pair.of(highestCacheLineId.asLong() - numIdsToAllocate, highestCacheLineId.asLong());
     }
 

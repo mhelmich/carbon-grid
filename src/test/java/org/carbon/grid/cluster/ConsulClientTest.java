@@ -99,4 +99,21 @@ public class ConsulClientTest extends BaseTest {
             consul.destroy();
         }
     }
+
+    @Test
+    public void testNodeInfoWatcher() throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        ScheduledExecutorService es = Executors.newScheduledThreadPool(2);
+        try (ConsulClient client = new ConsulClient(mockConsulConfig(), es)) {
+            assertEquals(ConsulCluster.MIN_NODE_ID, client.myNodeId());
+            client.registerNodeInfoWatcher(ConsulCluster.NODE_INFO_KEY_PREFIX, nodeInfos -> {
+                latch.countDown();
+                assertEquals(0, nodeInfos.size());
+            });
+
+            assertTrue(latch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
+        } finally {
+            es.shutdown();
+        }
+    }
 }
