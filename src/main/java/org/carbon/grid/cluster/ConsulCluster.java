@@ -138,18 +138,21 @@ class ConsulCluster implements Cluster {
                     }
 
                     executorService.submit(() -> {
-                        long before = System.currentTimeMillis();
-                        int numIdsToAllocate = Math.min(nextCacheLineIds.remainingCapacity(), ID_CHUNK_SIZE);
-                        Pair<Long, Long> idChunk = allocateIds(numIdsToAllocate);
-                        highWaterMarkCacheLineId.set(idChunk.getRight());
-                        // all of these ids go into the id queue now
-                        for (long i = idChunk.getLeft(); i < idChunk.getRight(); i++) {
-                            nextCacheLineIds.offer(i);
-                        }
-                        logger.info("Reserved {} new ids in {} ms", numIdsToAllocate, System.currentTimeMillis() - before);
-                        if (!idAllocatorInFlight.compareAndSet(true, false)) {
-                            logger.warn("idAllocatorInFlight was set to {} -- that's weird I'm overriding it to false anyway to proceed", idAllocatorInFlight.get());
-                            idAllocatorInFlight.set(false);
+                        try {
+                            long before = System.currentTimeMillis();
+                            int numIdsToAllocate = Math.min(nextCacheLineIds.remainingCapacity(), ID_CHUNK_SIZE);
+                            Pair<Long, Long> idChunk = allocateIds(numIdsToAllocate);
+                            highWaterMarkCacheLineId.set(idChunk.getRight());
+                            // all of these ids go into the id queue now
+                            for (long i = idChunk.getLeft(); i < idChunk.getRight(); i++) {
+                                nextCacheLineIds.offer(i);
+                            }
+                            logger.info("Reserved {} new ids in {} ms", numIdsToAllocate, System.currentTimeMillis() - before);
+                        } finally {
+                            if (!idAllocatorInFlight.compareAndSet(true, false)) {
+                                logger.warn("idAllocatorInFlight was set to {} -- that's weird I'm overriding it to false anyway to proceed", idAllocatorInFlight.get());
+                                idAllocatorInFlight.set(false);
+                            }
                         }
                     });
                 }
