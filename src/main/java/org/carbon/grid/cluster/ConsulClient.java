@@ -128,7 +128,7 @@ class ConsulClient implements Closeable {
         // that means two things:
         // a) the peerChangeConsumer needs to be really fast
         // b) the peerChangeConsumer needs to dedup existing nodes from new nodes (by putting the into a map or something)
-        ConsulValueWatcher<ServiceHealth> serviceHealthWatcher = new ConsulValueWatcher<>(executorService,
+        ConsulValueWatcher<List<ServiceHealth>> serviceHealthWatcher = new ConsulValueWatcher<>(executorService,
                 (index, responseCallback) -> {
                     QueryOptions params = ConsulValueWatcher.generateBlockingQueryOptions(index, 10);
                     consul.healthClient().getHealthyServiceInstances(SERVICE_NAME, params, responseCallback);
@@ -146,6 +146,17 @@ class ConsulClient implements Closeable {
         );
 
         watchers.add(serviceHealthWatcher);
+    }
+
+    void registerNodeInfoWatcher() {
+        ConsulValueWatcher<com.google.common.base.Optional<Value>> nodeInfoWatcher = new ConsulValueWatcher<>(executorService,
+                (index, responseCallback) -> {
+                    QueryOptions params = ConsulValueWatcher.generateBlockingQueryOptions(index, 10);
+                    consul.keyValueClient().getValue("", params, responseCallback);
+                },
+                (valueOptional) -> {}
+        );
+        watchers.add(nodeInfoWatcher);
     }
 
     Map<Short, InetSocketAddress> getHealthyNodes() {

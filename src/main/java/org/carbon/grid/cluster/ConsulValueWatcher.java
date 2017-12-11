@@ -27,7 +27,6 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.math.BigInteger;
 import java.net.SocketTimeoutException;
-import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -39,19 +38,19 @@ class ConsulValueWatcher<T> implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(ConsulValueWatcher.class);
     private final AtomicBoolean watcherIsRunning = new AtomicBoolean(true);
     private final AtomicReference<BigInteger> latestIndex = new AtomicReference<>(null);
-    private final AtomicReference<List<T>> latestResponseList = new AtomicReference<>(null);
+    private final AtomicReference<T> latestResponseList = new AtomicReference<>(null);
 
     private final ScheduledExecutorService executorService;
     private final ConsulResponseProcessor<T> responseProcessor;
     private final ConsulRequestCallback<T> requestCallback;
 
-    private final ConsulResponseCallback<List<T>> responseCallback = new ConsulResponseCallback<List<T>>() {
+    private final ConsulResponseCallback<T> responseCallback = new ConsulResponseCallback<T>() {
         @Override
-        public void onComplete(ConsulResponse<List<T>> consulResponse) {
+        public void onComplete(ConsulResponse<T> consulResponse) {
             if (consulResponse.isKnownLeader()) {
                 if (watcherIsRunning.get()) {
                     latestIndex.set(consulResponse.getIndex());
-                    List<T> responseList = consulResponse.getResponse();
+                    T responseList = consulResponse.getResponse();
                     if (responseList != null && !responseList.equals(latestResponseList.get())) {
                         latestResponseList.set(responseList);
                         responseProcessor.accept(responseList);
@@ -111,8 +110,8 @@ class ConsulValueWatcher<T> implements Closeable {
     }
 
     @FunctionalInterface
-    interface ConsulRequestCallback<V> extends BiConsumer<BigInteger, ConsulResponseCallback<List<V>>> { }
+    interface ConsulRequestCallback<V> extends BiConsumer<BigInteger, ConsulResponseCallback<V>> { }
 
     @FunctionalInterface
-    interface ConsulResponseProcessor<V> extends Consumer<List<V>> { }
+    interface ConsulResponseProcessor<V> extends Consumer<V> { }
 }
