@@ -86,6 +86,10 @@ class ConsulClient implements Closeable {
         return consul.sessionClient().createSession(session).getId();
     }
 
+    void setMyNodeInfo(NodeInfo myNodeInfo) {
+        putValue(ConsulCluster.NODE_INFO_KEY_PREFIX + myNodeIdStr, myNodeInfo.toConsulValue());
+    }
+
     // register two scheduled jobs that keep refreshing the session and the service health check
     void registerHealthCheckJobs(int myServicePort, Consumer<Exception> healthCheckFailedCallback) {
         consul.agentClient().register(myServicePort, consulConfig.timeout(), SERVICE_NAME, myNodeIdStr);
