@@ -49,6 +49,11 @@ import java.util.concurrent.atomic.AtomicLong;
  * - changes in node upness (and the listener and its consumer)
  * - death pills
  * - leader-replica allocation (I still have to define a HA strategy)
+ *
+ * Useful reads for cluster election mechanisms:
+ * - https://redis.io/topics/cluster-spec
+ * - https://cwiki.apache.org/confluence/display/KAFKA/Kafka+replication+detailed+design+V2
+ * - https://cwiki.apache.org/confluence/display/KAFKA/kafka+Detailed+Replication+Design+V3
  */
 @Singleton
 class ConsulCluster implements Cluster {
