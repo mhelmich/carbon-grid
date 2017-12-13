@@ -42,6 +42,10 @@ class CrushMap {
         return new Builder();
     }
 
+    List<Short> calculateReplicaNodes(short nodeId, Node root) {
+        return placeCacheLine((long)nodeId, root);
+    }
+
     List<Short> placeCacheLine(long cacheLineId, Node root) {
         List<Node> nodes = Collections.singletonList(root);
         // roll over all rules which descends me all the way to the leaf
