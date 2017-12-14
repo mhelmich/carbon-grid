@@ -49,6 +49,11 @@ import java.util.concurrent.atomic.AtomicLong;
  * - changes in node upness (and the listener and its consumer)
  * - death pills
  * - leader-replica allocation (I still have to define a HA strategy)
+ *
+ * Useful reads for cluster election mechanisms:
+ * - https://redis.io/topics/cluster-spec
+ * - https://cwiki.apache.org/confluence/display/KAFKA/Kafka+replication+detailed+design+V2
+ * - https://cwiki.apache.org/confluence/display/KAFKA/kafka+Detailed+Replication+Design+V3
  */
 @Singleton
 class ConsulCluster implements Cluster {
@@ -95,6 +100,9 @@ class ConsulCluster implements Cluster {
             // TODO -- build death pill logic here
         });
         consulClient.registerNodeHealthWatcher(peerChangeConsumer);
+        consulClient.registerNodeInfoWatcher(NODE_INFO_KEY_PREFIX, nodeInfos -> {
+
+        });
         setDefaultCacheLineIdSeed();
         triggerGloballyUniqueIdAllocator();
         this.isUp.set(true);
@@ -120,8 +128,8 @@ class ConsulCluster implements Cluster {
             if (!highestCacheLineIdOpt.isPresent()) throw new IllegalStateException("Can't allocate new cache line ids");
             highestCacheLineId = highestCacheLineIdOpt.get();
             if (highestCacheLineIdOpt.get().asLong() + numIdsToAllocate > Long.MAX_VALUE) throw new IllegalStateException("Can't allocate cache line id " + (highestCacheLineIdOpt.get().asLong() + numIdsToAllocate));
-            logger.info("Trying to allocate chunk {} - {}", highestCacheLineIdOpt.get().asLong(), highestCacheLineIdOpt.get().asLong() + numIdsToAllocate);
         } while (!consulClient.casValue(CACHE_LINE_ID_KEY, highestCacheLineId.asLong() + numIdsToAllocate, highestCacheLineId));
+        logger.info("Allocated chunk {} - {}", highestCacheLineId.asLong() - numIdsToAllocate, highestCacheLineId.asLong());
         return Pair.of(highestCacheLineId.asLong() - numIdsToAllocate, highestCacheLineId.asLong());
     }
 
@@ -138,18 +146,21 @@ class ConsulCluster implements Cluster {
                     }
 
                     executorService.submit(() -> {
-                        long before = System.currentTimeMillis();
-                        int numIdsToAllocate = Math.min(nextCacheLineIds.remainingCapacity(), ID_CHUNK_SIZE);
-                        Pair<Long, Long> idChunk = allocateIds(numIdsToAllocate);
-                        highWaterMarkCacheLineId.set(idChunk.getRight());
-                        // all of these ids go into the id queue now
-                        for (long i = idChunk.getLeft(); i < idChunk.getRight(); i++) {
-                            nextCacheLineIds.offer(i);
-                        }
-                        logger.info("Reserved {} new ids in {} ms", numIdsToAllocate, System.currentTimeMillis() - before);
-                        if (!idAllocatorInFlight.compareAndSet(true, false)) {
-                            logger.warn("idAllocatorInFlight was set to {} -- that's weird I'm overriding it to false anyway to proceed", idAllocatorInFlight.get());
-                            idAllocatorInFlight.set(false);
+                        try {
+                            long before = System.currentTimeMillis();
+                            int numIdsToAllocate = Math.min(nextCacheLineIds.remainingCapacity(), ID_CHUNK_SIZE);
+                            Pair<Long, Long> idChunk = allocateIds(numIdsToAllocate);
+                            highWaterMarkCacheLineId.set(idChunk.getRight());
+                            // all of these ids go into the id queue now
+                            for (long i = idChunk.getLeft(); i < idChunk.getRight(); i++) {
+                                nextCacheLineIds.offer(i);
+                            }
+                            logger.info("Reserved {} new ids in {} ms", numIdsToAllocate, System.currentTimeMillis() - before);
+                        } finally {
+                            if (!idAllocatorInFlight.compareAndSet(true, false)) {
+                                logger.warn("idAllocatorInFlight was set to {} -- that's weird I'm overriding it to false anyway to proceed", idAllocatorInFlight.get());
+                                idAllocatorInFlight.set(false);
+                            }
                         }
                     });
                 }

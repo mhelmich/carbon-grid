@@ -86,6 +86,10 @@ class ConsulClient implements Closeable {
         return consul.sessionClient().createSession(session).getId();
     }
 
+    void setMyNodeInfo(NodeInfo myNodeInfo) {
+        putValue(ConsulCluster.NODE_INFO_KEY_PREFIX + myNodeIdStr, myNodeInfo.toConsulValue());
+    }
+
     // register two scheduled jobs that keep refreshing the session and the service health check
     void registerHealthCheckJobs(int myServicePort, Consumer<Exception> healthCheckFailedCallback) {
         consul.agentClient().register(myServicePort, consulConfig.timeout(), SERVICE_NAME, myNodeIdStr);
@@ -128,7 +132,7 @@ class ConsulClient implements Closeable {
         // that means two things:
         // a) the peerChangeConsumer needs to be really fast
         // b) the peerChangeConsumer needs to dedup existing nodes from new nodes (by putting the into a map or something)
-        ConsulValueWatcher<ServiceHealth> serviceHealthWatcher = new ConsulValueWatcher<>(executorService,
+        ConsulValueWatcher<List<ServiceHealth>> serviceHealthWatcher = new ConsulValueWatcher<>(executorService,
                 (index, responseCallback) -> {
                     QueryOptions params = ConsulValueWatcher.generateBlockingQueryOptions(index, 10);
                     consul.healthClient().getHealthyServiceInstances(SERVICE_NAME, params, responseCallback);
@@ -146,6 +150,34 @@ class ConsulClient implements Closeable {
         );
 
         watchers.add(serviceHealthWatcher);
+    }
+
+    void registerNodeInfoWatcher(String keyPrefix, Consumer<List<NodeInfo>> nodeInfoConsumer) {
+        ConsulValueWatcher<List<Value>> nodeInfoWatcher = new ConsulValueWatcher<>(executorService,
+                (index, responseCallback) -> {
+                    QueryOptions params = ConsulValueWatcher.generateBlockingQueryOptions(index, 10);
+                    consul.keyValueClient().getValues(keyPrefix, params, responseCallback);
+                },
+                valueList -> {
+                    List<NodeInfo> nis = new LinkedList<>();
+                    for (Value v : valueList) {
+                        if (v.getValueAsString().isPresent()) {
+                            String nodeInfoStr = v.getValueAsString().get();
+                            if (!nodeInfoStr.isEmpty()) {
+                                NodeInfo ni = new NodeInfo(nodeInfoStr);
+                                nis.add(ni);
+                            } else {
+                                logger.warn("Key {} doesn't have a value", v.getKey());
+                            }
+                        } else {
+                            logger.warn("Key {} doesn't have a value", v.getKey());
+                        }
+                    }
+
+                    nodeInfoConsumer.accept(nis);
+                }
+        );
+        watchers.add(nodeInfoWatcher);
     }
 
     Map<Short, InetSocketAddress> getHealthyNodes() {

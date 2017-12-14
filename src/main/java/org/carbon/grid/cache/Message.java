@@ -579,12 +579,12 @@ abstract class Message implements Persistable {
         // this is used to establish a "global state" among all replicas of a leader
         // replicas will go and compete for leadership with the latest message number they received
         // the replica with the highest message number wins and will become new leader
-        long runningMessageNumber;
+        long leaderEpoch;
         // after a failover the new leader might need to replay a bunch of messages to the rest of the replicas
         // for that replicas keep a short history of all changes
         // the leader however provides replicas with the latest state that all replicas know about
         // everything older than this is safe to discard as all replicas know about this state already
-        long lastAckedMessageNumber;
+        long lastAckedLeaderEpoch;
         int version;
         ByteBuf buffer;
 
@@ -592,12 +592,12 @@ abstract class Message implements Persistable {
             super(MessageType.BACKUP);
         }
 
-        BACKUP(short sender, long lineId, long runningMessageNumber, long lastAckedMessageNumber, int version, ByteBuf buffer) {
+        BACKUP(short sender, long lineId, long leaderEpoch, long lastAckedLeaderEpoch, int version, ByteBuf buffer) {
             super(MessageType.BACKUP);
             this.sender = sender;
             this.lineId = lineId;
-            this.runningMessageNumber = runningMessageNumber;
-            this.lastAckedMessageNumber = lastAckedMessageNumber;
+            this.leaderEpoch = leaderEpoch;
+            this.lastAckedLeaderEpoch = lastAckedLeaderEpoch;
             this.version = version;
             this.buffer = buffer;
         }
@@ -616,8 +616,8 @@ abstract class Message implements Persistable {
         @Override
         public void write(MessageOutput out) throws IOException {
             super.write(out);
-            out.writeLong(runningMessageNumber);
-            out.writeLong(lastAckedMessageNumber);
+            out.writeLong(leaderEpoch);
+            out.writeLong(lastAckedLeaderEpoch);
             out.writeInt(version);
             if (buffer != null) {
                 out.writeInt(buffer.capacity());
@@ -631,8 +631,8 @@ abstract class Message implements Persistable {
         @Override
         public void read(MessageInput in) throws IOException {
             super.read(in);
-            runningMessageNumber = in.readLong();
-            lastAckedMessageNumber = in.readLong();
+            leaderEpoch = in.readLong();
+            lastAckedLeaderEpoch = in.readLong();
             version = in.readInt();
             int bytesToRead = in.readInt();
             buffer = (bytesToRead == 0) ? null : in.readByteBuf(bytesToRead);
@@ -643,8 +643,8 @@ abstract class Message implements Persistable {
             if (BACKUP.class.isInstance(obj)) {
                 BACKUP that = (BACKUP)obj;
                 return super.equals(that)
-                        && this.runningMessageNumber == that.runningMessageNumber
-                        && this.lastAckedMessageNumber == that.lastAckedMessageNumber
+                        && this.leaderEpoch == that.leaderEpoch
+                        && this.lastAckedLeaderEpoch == that.lastAckedLeaderEpoch
                         && this.version == that.version
                         && this.buffer.capacity() == that.buffer.capacity();
             } else {
@@ -654,7 +654,7 @@ abstract class Message implements Persistable {
 
         @Override
         BACKUP copy() {
-            return new BACKUP(sender, lineId, runningMessageNumber, lastAckedMessageNumber, version, buffer);
+            return new BACKUP(sender, lineId, leaderEpoch, lastAckedLeaderEpoch, version, buffer);
         }
 
         @Override
@@ -669,26 +669,26 @@ abstract class Message implements Persistable {
                 .putShort(msg.sender)
                 .putInt(msg.messageSequenceNumber)
                 .putLong(msg.lineId)
-                .putLong(msg.runningMessageNumber)
-                .putLong(msg.lastAckedMessageNumber)
+                .putLong(msg.leaderEpoch)
+                .putLong(msg.lastAckedLeaderEpoch)
                 .putInt(msg.version)
                 .putInt((msg.buffer == null) ? 0 : msg.buffer.capacity())
                 ;
     }
 
     static class BACKUPACK extends Response {
-        long runningMessageNumber;
+        long ackedLeaderEpoch;
 
         BACKUPACK() {
             super(MessageType.BACKUP_ACK);
         }
 
-        BACKUPACK(int requestMessageId, short sender, long lineId, long runningMessageNumber) {
+        BACKUPACK(int requestMessageId, short sender, long lineId, long ackedLeaderEpoch) {
             super(MessageType.BACKUP_ACK);
             this.messageSequenceNumber = requestMessageId;
             this.sender = sender;
             this.lineId = lineId;
-            this.runningMessageNumber = runningMessageNumber;
+            this.ackedLeaderEpoch = ackedLeaderEpoch;
         }
 
         @Override
@@ -701,13 +701,13 @@ abstract class Message implements Persistable {
         @Override
         public void write(MessageOutput out) throws IOException {
             super.write(out);
-            out.writeLong(runningMessageNumber);
+            out.writeLong(ackedLeaderEpoch);
         }
 
         @Override
         public void read(MessageInput in) throws IOException {
             super.read(in);
-            runningMessageNumber = in.readLong();
+            ackedLeaderEpoch = in.readLong();
         }
 
         @Override
@@ -715,7 +715,7 @@ abstract class Message implements Persistable {
             if (BACKUPACK.class.isInstance(obj)) {
                 BACKUPACK that = (BACKUPACK)obj;
                 return super.equals(that)
-                        && this.runningMessageNumber == that.runningMessageNumber;
+                        && this.ackedLeaderEpoch == that.ackedLeaderEpoch;
             } else {
                 return false;
             }
@@ -733,7 +733,7 @@ abstract class Message implements Persistable {
                 .putShort(msg.sender)
                 .putInt(msg.messageSequenceNumber)
                 .putLong(msg.lineId)
-                .putLong(msg.runningMessageNumber)
+                .putLong(msg.ackedLeaderEpoch)
                 ;
     }
 
