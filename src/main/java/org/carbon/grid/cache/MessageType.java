@@ -35,11 +35,12 @@ enum MessageType {
     INV((byte)3),
     INVACK((byte)4),
     BACKUP((byte)5),
-    BACKUP_ACK((byte)6),
-    RESEND((byte)7),
+    REMOVE_BACKUP((byte)6),
+    BACKUP_ACK((byte)7),
     GETX((byte)8),
     PUTX((byte)9),
-    OWNER_CHANGED((byte)10)
+    OWNER_CHANGED((byte)10),
+    CHANGE_OWNER((byte)11),
     ;
 
     private final static Map<Byte, MessageType> byteToType;

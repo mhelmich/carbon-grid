@@ -134,6 +134,10 @@ class InternalCacheImpl implements InternalCache {
                 return handleGETX((Message.GETX)request);
             case INV:
                 return handleINV((Message.INV)request);
+            case REMOVE_BACKUP:
+                return handleREMOVE_BACKUP((Message.REMOVE_BACKUP)request);
+            case CHANGE_OWNER:
+                return handleCHANGE_OWNER((Message.CHANGE_OWNER)request);
             default:
                 throw new RuntimeException("Unknown type " + request.type);
         }
@@ -369,6 +373,14 @@ class InternalCacheImpl implements InternalCache {
 
             comms.reactToResponse(ownerChanged, ownerChanged.newOwner, messageToSend);
         }
+    }
+
+    private Message.Response handleCHANGE_OWNER(Message.CHANGE_OWNER changeOwner) {
+        return null;
+    }
+
+    private Message.Response handleREMOVE_BACKUP(Message.REMOVE_BACKUP removeBackup) {
+        return null;
     }
 
 

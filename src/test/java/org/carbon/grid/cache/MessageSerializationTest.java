@@ -90,8 +90,19 @@ public class MessageSerializationTest {
             buf.release();
         }
 
-        Message.BACKUPACK backupack = new Message.BACKUPACK(messageSequence, sender, lineId, 852369L);
+        Message.BACKUP_ACK backupack = new Message.BACKUP_ACK(messageSequence, sender, lineId, 852369L);
         runTest(backupack);
+
+        Message.REMOVE_BACKUP removebackup = new Message.REMOVE_BACKUP(sender, lineId);
+        runTest(removebackup);
+
+        buf = newRandomBuffer().retain();
+        try {
+            Message.CHANGE_OWNER changeowner = new Message.CHANGE_OWNER(sender, lineId, 12345678, buf);
+            runTest(changeowner);
+        } finally {
+            buf.release();
+        }
     }
 
     private void runTest(Message msgToSerialize) throws IOException {

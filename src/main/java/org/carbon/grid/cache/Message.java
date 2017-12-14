@@ -113,6 +113,20 @@ abstract class Message implements Persistable {
             .putLong(msg.lineId)
             ;
 
+    // the same as
+    // if (dis == null && dat == null) return true;
+    // else if (dis != null && dat != null) return ByteBufUtil.equals(dis, dat);
+    // else return false;
+    boolean equalsByteBuf(ByteBuf dis, ByteBuf dat) {
+        return dis == null && dat == null
+                || dis != null && dat != null && dis.capacity() == dat.capacity();
+                                            // && ByteBufUtil.equals(dis, dat);
+                                            // I somewhat wanted to use this but
+                                            // equals also depends on the underlying implementation
+                                            // of the ByteBuf instance
+                                            // for now ByteBufs are the same if they have the same size *sigh*
+    }
+
     static abstract class Request extends Message {
         Request(MessageType type) {
             super(type);
@@ -233,20 +247,6 @@ abstract class Message implements Persistable {
             } else {
                 return false;
             }
-        }
-
-        // the same as
-        // if (dis == null && dat == null) return true;
-        // else if (dis != null && dat != null) return ByteBufUtil.equals(dis, dat);
-        // else return false;
-        private boolean equalsByteBuf(ByteBuf dis, ByteBuf dat) {
-            return dis == null && dat == null
-                    || dis != null && dat != null && dis.capacity() == dat.capacity();
-                                               // && ByteBufUtil.equals(dis, dat);
-                                               // I somewhat wanted to use this but
-                                               // equals also depends on the underlying implementation
-                                               // of the ByteBuf instance
-                                               // for now ByteBufs are the same if they have the same size *sigh*
         }
 
         @Override
@@ -412,20 +412,6 @@ abstract class Message implements Persistable {
             }
         }
 
-        // the same as
-        // if (dis == null && dat == null) return true;
-        // else if (dis != null && dat != null) return ByteBufUtil.equals(dis, dat);
-        // else return false;
-        private boolean equalsByteBuf(ByteBuf dis, ByteBuf dat) {
-            return dis == null && dat == null
-                    || dis != null && dat != null && dis.capacity() == dat.capacity();
-                                                    // && ByteBufUtil.equals(dis, dat);
-                                                    // I somewhat wanted to use this but
-                                                    // equals also depends on the underlying implementation
-                                                    // of the ByteBuf instance
-                                                    // for now ByteBufs are the same if they have the same size *sigh*
-        }
-
         @Override
         public int hashCode() {
             return Hashing.goodFastHash(32)
@@ -588,7 +574,7 @@ abstract class Message implements Persistable {
         int version;
         ByteBuf buffer;
 
-        BACKUP() {
+        private BACKUP() {
             super(MessageType.BACKUP);
         }
 
@@ -676,14 +662,14 @@ abstract class Message implements Persistable {
                 ;
     }
 
-    static class BACKUPACK extends Response {
+    static class BACKUP_ACK extends Response {
         long ackedLeaderEpoch;
 
-        BACKUPACK() {
+        private BACKUP_ACK() {
             super(MessageType.BACKUP_ACK);
         }
 
-        BACKUPACK(int requestMessageId, short sender, long lineId, long ackedLeaderEpoch) {
+        BACKUP_ACK(int requestMessageId, short sender, long lineId, long ackedLeaderEpoch) {
             super(MessageType.BACKUP_ACK);
             this.messageSequenceNumber = requestMessageId;
             this.sender = sender;
@@ -712,8 +698,8 @@ abstract class Message implements Persistable {
 
         @Override
         public boolean equals(Object obj) {
-            if (BACKUPACK.class.isInstance(obj)) {
-                BACKUPACK that = (BACKUPACK)obj;
+            if (BACKUP_ACK.class.isInstance(obj)) {
+                BACKUP_ACK that = (BACKUP_ACK)obj;
                 return super.equals(that)
                         && this.ackedLeaderEpoch == that.ackedLeaderEpoch;
             } else {
@@ -724,16 +710,122 @@ abstract class Message implements Persistable {
         @Override
         public int hashCode() {
             return Hashing.goodFastHash(32)
-                    .hashObject(this, backupackFunnel)
+                    .hashObject(this, backupAckFunnel)
                     .asInt();
         }
 
-        private static final Funnel<BACKUPACK> backupackFunnel = (Funnel<BACKUPACK>) (msg, into) -> into
+        private static final Funnel<BACKUP_ACK> backupAckFunnel = (Funnel<BACKUP_ACK>) (msg, into) -> into
                 .putByte(msg.type.ordinal)
                 .putShort(msg.sender)
                 .putInt(msg.messageSequenceNumber)
                 .putLong(msg.lineId)
                 .putLong(msg.ackedLeaderEpoch)
+                ;
+    }
+
+    static class REMOVE_BACKUP extends Request {
+        private REMOVE_BACKUP() {
+            super(MessageType.REMOVE_BACKUP);
+        }
+
+        REMOVE_BACKUP(short sender, long lineId) {
+            super(MessageType.REMOVE_BACKUP);
+            this.sender = sender;
+            this.lineId = lineId;
+        }
+
+        @Override
+        REMOVE_BACKUP copy() {
+            return new REMOVE_BACKUP(sender, lineId);
+        }
+
+        @Override
+        public int hashCode() {
+            return super.hashCode();
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (REMOVE_BACKUP.class.isInstance(obj)) {
+                REMOVE_BACKUP that = (REMOVE_BACKUP)obj;
+                return super.equals(that);
+            } else {
+                return false;
+            }
+        }
+    }
+
+    static class CHANGE_OWNER extends Request {
+        int version;
+        ByteBuf data;
+
+        private CHANGE_OWNER() {
+            super(MessageType.CHANGE_OWNER);
+        }
+
+        CHANGE_OWNER(short sender, long lineId, int version, ByteBuf data) {
+            super(MessageType.CHANGE_OWNER);
+            this.sender = sender;
+            this.lineId = lineId;
+            this.version = version;
+            this.data = data;
+        }
+
+        @Override
+        public int calcMessagesByteSize() {
+            return super.calcMessagesByteSize()
+                    + 4                                          // version number int
+                    + 4                                          // bytebuf size
+                    + ((data == null) ? 0 : data.capacity())     // buffer content
+                    ;
+        }
+
+        @Override
+        public void write(MessageOutput out) throws IOException {
+            super.write(out);
+            out.writeInt(version);
+            if (data == null) {
+                out.writeInt(0);
+            } else {
+                out.writeInt(data.capacity());
+                out.writeByteBuf(data.resetReaderIndex());
+                data.release();
+            }
+        }
+
+        @Override
+        public void read(MessageInput in) throws IOException {
+            super.read(in);
+            version = in.readInt();
+            int bytesToRead = in.readInt();
+            data = (bytesToRead == 0) ? null : in.readByteBuf(bytesToRead);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (CHANGE_OWNER.class.isInstance(obj)) {
+                CHANGE_OWNER that = (CHANGE_OWNER)obj;
+                return super.equals(that)
+                        && this.version == that.version
+                        && equalsByteBuf(this.data, that.data);
+            } else {
+                return false;
+            }
+        }
+
+        @Override
+        public int hashCode() {
+            return Hashing.goodFastHash(32)
+                    .hashObject(this, changeOwnerFunnel)
+                    .asInt();
+        }
+
+        private static final Funnel<CHANGE_OWNER> changeOwnerFunnel = (Funnel<CHANGE_OWNER>) (msg, into) -> into
+                .putByte(msg.type.ordinal)
+                .putShort(msg.sender)
+                .putLong(msg.lineId)
+                .putInt(msg.version)
+                .putInt((msg.data == null) ? 0 : msg.data.capacity())
                 ;
     }
 
@@ -759,7 +851,11 @@ abstract class Message implements Persistable {
                 case BACKUP:
                     return new BACKUP();
                 case BACKUP_ACK:
-                    return new BACKUPACK();
+                    return new BACKUP_ACK();
+                case REMOVE_BACKUP:
+                    return new REMOVE_BACKUP();
+                case CHANGE_OWNER:
+                    return new CHANGE_OWNER();
                 default:
                     throw new IllegalArgumentException("Unknown type " + type);
             }
