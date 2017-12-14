@@ -16,6 +16,8 @@
 
 package org.carbon.grid;
 
+import com.google.common.net.HostAndPort;
+import com.orbitz.consul.Consul;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import org.junit.AfterClass;
@@ -42,7 +44,7 @@ public class BaseTest {
     protected CarbonGrid.ConsulConfig mockConsulConfig() {
         CarbonGrid.ConsulConfig sc = Mockito.mock(CarbonGrid.ConsulConfig.class);
         when(sc.host()).thenReturn("localhost");
-        when(sc.port()).thenReturn(8500);
+        when(sc.port()).thenReturn(getConsulPort());
         when(sc.timeout()).thenReturn(60);
         return sc;
     }
@@ -61,6 +63,16 @@ public class BaseTest {
         buffer.writeBytes(bites);
         buffers.add(buffer);
         return buffer;
+    }
+
+    protected Consul createConsul() {
+        return Consul.builder()
+                .withHostAndPort(HostAndPort.fromParts("localhost", getConsulPort()))
+                .build();
+    }
+
+    private int getConsulPort() {
+        return 32769;
     }
 
     // not the nicest but effective

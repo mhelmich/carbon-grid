@@ -9,7 +9,7 @@ consul:
     # host of consul
     host: "localhost"
     # port of consul
-    port: 8500
+    port: 32769
     # timeout of talking to consul in secs
     timeout: 10
     # number of failed attempts to reach consul

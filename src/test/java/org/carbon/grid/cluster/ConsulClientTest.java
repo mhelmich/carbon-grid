@@ -16,7 +16,6 @@
 
 package org.carbon.grid.cluster;
 
-import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
 import org.carbon.grid.BaseTest;
 import org.junit.Test;
@@ -45,9 +44,7 @@ public class ConsulClientTest extends BaseTest {
 
     @Test
     public void testRegisterConcurrent() {
-        Consul consul = Consul.builder()
-                .withHostAndPort(HostAndPort.fromParts("localhost", 8500))
-                .build();
+        Consul consul = createConsul();
 
         String prefix = UUID.randomUUID().toString();
         consul.keyValueClient().putValue( prefix + "-500", "500");
