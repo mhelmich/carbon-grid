@@ -21,3 +21,7 @@ cache:
     maxAvailableMemory: 1073741824
     # the max size of a single cache line in bytes
     maxCacheLineSize: 32768
+    # the number of replicas the cache creates for each cache line
+    # the higher the number, the better the cache is guarded against
+    # node failures and the slower updates work
+    replicationFactor: 3
