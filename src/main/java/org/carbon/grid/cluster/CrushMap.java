@@ -92,7 +92,7 @@ class CrushMap {
 
     // the crush algorithm code
     private List<CrushNode> select(Long cacheLineId, CrushNode parent, int numItemsToSelect, boolean firstN, Predicate<CrushNode> matchesType) {
-        if (parent.getChildren().size() < numItemsToSelect) throw new RuntimeException();
+        if (parent.getChildren().size() < numItemsToSelect) throw new RuntimeException("Can't pick " + numItemsToSelect + " nodes out of " + parent.getChildren().size() + " available nodes.");
         List<CrushNode> selected = new LinkedList<>();
 
         int numFailures = 0;
