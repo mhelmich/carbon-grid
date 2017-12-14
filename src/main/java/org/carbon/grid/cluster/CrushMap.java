@@ -42,30 +42,30 @@ class CrushMap {
         return new Builder();
     }
 
-    List<Short> calculateReplicaNodes(short nodeId, Node root) {
+    List<Short> calculateReplicaNodes(short nodeId, CrushNode root) {
         return placeCacheLine((long)nodeId, root);
     }
 
-    List<Short> placeCacheLine(long cacheLineId, Node root) {
-        List<Node> nodes = Collections.singletonList(root);
+    List<Short> placeCacheLine(long cacheLineId, CrushNode root) {
+        List<CrushNode> nodes = Collections.singletonList(root);
         // roll over all rules which descends me all the way to the leaf
         for (Rule r : rules) {
-            List<Node> newNodes = new LinkedList<>();
-            for (Node x : nodes) {
-                List<Node> n = select(cacheLineId, x, r.numNodesToSelect, true, r.predicate);
+            List<CrushNode> newNodes = new LinkedList<>();
+            for (CrushNode x : nodes) {
+                List<CrushNode> n = select(cacheLineId, x, r.numNodesToSelect, true, r.predicate);
                 newNodes.addAll(n);
             }
             nodes = newNodes;
         }
 
         // convert everything to node ids
-        return nodes.stream().map(Node::getNodeId).collect(Collectors.toList());
+        return nodes.stream().map(CrushNode::getNodeId).collect(Collectors.toList());
     }
 
     static class Builder {
         private final LinkedList<Rule> rules = new LinkedList<>();
 
-        Builder addPlacementRule(CrushHierarchyLevel level, int numNodesToSelect, Predicate<Node> predicate) {
+        Builder addPlacementRule(CrushHierarchyLevel level, int numNodesToSelect, Predicate<CrushNode> predicate) {
             rules.add(new Rule(level, numNodesToSelect, predicate));
             return this;
         }
@@ -81,9 +81,9 @@ class CrushMap {
     static class Rule {
         final CrushHierarchyLevel level;
         final int numNodesToSelect;
-        final Predicate<Node> predicate;
+        final Predicate<CrushNode> predicate;
 
-        private Rule(CrushHierarchyLevel level, int numNodesToSelect, Predicate<Node> predicate) {
+        private Rule(CrushHierarchyLevel level, int numNodesToSelect, Predicate<CrushNode> predicate) {
             this.level = level;
             this.numNodesToSelect = numNodesToSelect;
             this.predicate = predicate;
@@ -91,17 +91,17 @@ class CrushMap {
     }
 
     // the crush algorithm code
-    private List<Node> select(Long cacheLineId, Node parent, int numItemsToSelect, boolean firstN, Predicate<Node> matchesType) {
+    private List<CrushNode> select(Long cacheLineId, CrushNode parent, int numItemsToSelect, boolean firstN, Predicate<CrushNode> matchesType) {
         if (parent.getChildren().size() < numItemsToSelect) throw new RuntimeException();
-        List<Node> selected = new LinkedList<>();
+        List<CrushNode> selected = new LinkedList<>();
 
         int numFailures = 0;
         for (int r = 0; r < numItemsToSelect; r++) {
             boolean retryOnParent = false;
-            Node selectedNode;
+            CrushNode selectedNode;
             do {
                 boolean retryOnX = false;
-                Node x = parent;
+                CrushNode x = parent;
                 do {
                     // rPrime is an addition to the hash the is generated off of
                     // the cache line id

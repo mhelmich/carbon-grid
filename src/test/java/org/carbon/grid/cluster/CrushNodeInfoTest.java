@@ -18,12 +18,13 @@ package org.carbon.grid.cluster;
 
 import org.junit.Test;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
 
-public class NodeInfoTest {
+public class CrushNodeInfoTest {
     @Test
     public void testReadWriteMaster() {
         Set<Short> replicas = new HashSet<Short>() {{
@@ -32,7 +33,7 @@ public class NodeInfoTest {
             add((short)88);
             add((short)99);
         }};
-        NodeInfo ni1 = new NodeInfo((short)15, replicas);
+        NodeInfo ni1 = new NodeInfo((short)15, "dc1", replicas, -1);
         String value1 = ni1.toConsulValue();
 
         NodeInfo ni2 = new NodeInfo(value1);
@@ -41,7 +42,7 @@ public class NodeInfoTest {
 
     @Test
     public void testReadWriteReplica() {
-        NodeInfo ni1 = new NodeInfo((short)15, (short)19);
+        NodeInfo ni1 = new NodeInfo((short)15, "dc1", Collections.emptySet(), (short)19);
         String value1 = ni1.toConsulValue();
 
         NodeInfo ni2 = new NodeInfo(value1);
@@ -50,7 +51,6 @@ public class NodeInfoTest {
 
     private void assertEqualsNodeInfo(NodeInfo ni1, NodeInfo ni2) {
         assertEquals(ni1.nodeId, ni2.nodeId);
-        assertEquals(ni1.isLeader, ni2.isLeader);
         assertEquals(ni1.replicaIds, ni2.replicaIds);
         assertEquals(ni1.leaderId, ni2.leaderId);
     }

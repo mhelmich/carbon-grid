@@ -37,9 +37,12 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.net.InetSocketAddress;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -86,8 +89,61 @@ class ConsulClient implements Closeable {
         return consul.sessionClient().createSession(session).getId();
     }
 
-    void setMyNodeInfo(NodeInfo myNodeInfo) {
-        putValue(ConsulCluster.NODE_INFO_KEY_PREFIX + myNodeIdStr, myNodeInfo.toConsulValue());
+    boolean setMyNodeInfo(NodeInfo myNodeInfo) {
+        return putValue(ConsulCluster.NODE_INFO_KEY_PREFIX + myNodeIdStr, myNodeInfo.toConsulValue());
+    }
+
+    boolean setMyNodeInfo(String dataCenter, int leaderId, short... replicaIds) {
+        HashSet<Short> replicas = new HashSet<>();
+        for (short id : replicaIds) {
+            replicas.add(id);
+        }
+        return setMyNodeInfo(new NodeInfo(myNodeId, dataCenter, replicas, leaderId));
+    }
+
+    CrushNode buildCrushNodeHierarchy() {
+        List<NodeInfo> nodeInfos = getAllNodeInfos();
+        Map<String, List<NodeInfo>> dcToNI = new HashMap<>();
+
+        for (NodeInfo ni : nodeInfos) {
+            List<NodeInfo> newList = new LinkedList<>();
+            List<NodeInfo> oldList = dcToNI.putIfAbsent(ni.dataCenter, newList);
+            if (oldList == null) {
+                newList.add(ni);
+            } else {
+                oldList.add(ni);
+            }
+        }
+
+        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT);
+
+        for (Map.Entry<String, List<NodeInfo>> e : dcToNI.entrySet()) {
+            CrushNode child = root.getChildByName(e.getKey());
+            if (child == null) {
+                CrushNode dcNode = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
+                root.addChild(e.getKey(), dcNode);
+                child = root.getChildByName(e.getKey());
+            }
+            for (NodeInfo ni : e.getValue()) {
+                CrushNode node = new CrushNode(CrushHierarchyLevel.NODE, ni.nodeId);
+                child.addChild(String.valueOf(ni.nodeId), node);
+            }
+        }
+
+        return root;
+    }
+
+    List<NodeInfo> getAllNodeInfos() {
+        List<String> nodeInfoKeys = listKeys(ConsulCluster.NODE_INFO_KEY_PREFIX);
+        List<NodeInfo> nodeInfos = new LinkedList<>();
+        for (String nodeInfoKey : nodeInfoKeys) {
+            Optional<String> niOpt = getValueAsString(nodeInfoKey);
+            if (niOpt.isPresent()) {
+                NodeInfo ni = new NodeInfo(niOpt.get());
+                nodeInfos.add(ni);
+            }
+        }
+        return nodeInfos;
     }
 
     // register two scheduled jobs that keep refreshing the session and the service health check
@@ -297,8 +353,8 @@ class ConsulClient implements Closeable {
 
     java.util.Optional<String> getValueAsString(String key) {
         com.google.common.base.Optional<Value> valueOpt = consul.keyValueClient().getValue(key);
-        if (valueOpt.isPresent() && valueOpt.get().getValue().isPresent()) {
-            return java.util.Optional.of(valueOpt.get().getValue().get());
+        if (valueOpt.isPresent() && valueOpt.get().getValueAsString().isPresent()) {
+            return java.util.Optional.of(valueOpt.get().getValueAsString().get());
         } else {
             return java.util.Optional.empty();
         }

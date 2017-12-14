@@ -26,7 +26,7 @@ import static org.junit.Assert.assertTrue;
 public class CrushMapTest {
     @Test
     public void testBasicHierarchy() {
-        Node root = buildNodeTree();
+        CrushNode root = buildNodeTree();
         CrushMap crt = CrushMap.builder()
                 .addPlacementRule(CrushHierarchyLevel.DATA_CENTER, 2, i -> true)
                 .addPlacementRule(CrushHierarchyLevel.NODE, 1, i -> true)
@@ -40,21 +40,21 @@ public class CrushMapTest {
 
     @Test
     public void testDisabledNodes() {
-        Node root = new Node(CrushHierarchyLevel.ROOT);
-        Node dc1 = new Node(CrushHierarchyLevel.DATA_CENTER);
-        Node dc2 = new Node(CrushHierarchyLevel.DATA_CENTER);
+        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT);
+        CrushNode dc1 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
+        CrushNode dc2 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
         root.addChild(dc1);
         root.addChild(dc2);
 
-        dc1.addChild(new Node(CrushHierarchyLevel.NODE, (short)500));
-        Node node501 = new Node(CrushHierarchyLevel.NODE, (short)501);
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)500));
+        CrushNode node501 = new CrushNode(CrushHierarchyLevel.NODE, (short)501);
         dc1.addChild(node501);
-        dc1.addChild(new Node(CrushHierarchyLevel.NODE, (short)502));
-        dc1.addChild(new Node(CrushHierarchyLevel.NODE, (short)503));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)502));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)503));
 
-        dc2.addChild(new Node(CrushHierarchyLevel.NODE, (short)510));
-        dc2.addChild(new Node(CrushHierarchyLevel.NODE, (short)511));
-        dc2.addChild(new Node(CrushHierarchyLevel.NODE, (short)512));
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)510));
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)511));
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)512));
 
         CrushMap crt = CrushMap.builder()
                 .addPlacementRule(CrushHierarchyLevel.DATA_CENTER, 2, i -> true)
@@ -75,21 +75,21 @@ public class CrushMapTest {
 
     @Test
     public void testDoesntMatchPredicate() {
-        Node root = new Node(CrushHierarchyLevel.ROOT);
-        Node dc1 = new Node(CrushHierarchyLevel.DATA_CENTER);
-        Node dc2 = new Node(CrushHierarchyLevel.DATA_CENTER);
+        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT);
+        CrushNode dc1 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
+        CrushNode dc2 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
         root.addChild(dc1);
         root.addChild(dc2);
 
-        dc1.addChild(new Node(CrushHierarchyLevel.NODE, (short)500));
-        Node node501 = new Node(CrushHierarchyLevel.NODE, (short)501);
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)500));
+        CrushNode node501 = new CrushNode(CrushHierarchyLevel.NODE, (short)501);
         dc1.addChild(node501);
-        dc1.addChild(new Node(CrushHierarchyLevel.NODE, (short)502));
-        dc1.addChild(new Node(CrushHierarchyLevel.NODE, (short)503));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)502));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)503));
 
-        dc2.addChild(new Node(CrushHierarchyLevel.NODE, (short)510));
-        dc2.addChild(new Node(CrushHierarchyLevel.NODE, (short)511));
-        dc2.addChild(new Node(CrushHierarchyLevel.NODE, (short)512));
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)510));
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)511));
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)512));
 
         CrushMap crt = CrushMap.builder()
                 .addPlacementRule(CrushHierarchyLevel.DATA_CENTER, 2, i -> true)
@@ -104,7 +104,7 @@ public class CrushMapTest {
 
     @Test(expected = RuntimeException.class)
     public void testFailure() {
-        Node root = buildNodeTree();
+        CrushNode root = buildNodeTree();
         CrushMap crt = CrushMap.builder()
                 .addPlacementRule(CrushHierarchyLevel.DATA_CENTER, 2, i -> true)
                 .addPlacementRule(CrushHierarchyLevel.NODE, 1, i -> false)
@@ -113,21 +113,21 @@ public class CrushMapTest {
         crt.placeCacheLine(99L, root);
     }
 
-    private Node buildNodeTree() {
-        Node root = new Node(CrushHierarchyLevel.ROOT);
-        Node dc1 = new Node(CrushHierarchyLevel.DATA_CENTER);
-        Node dc2 = new Node(CrushHierarchyLevel.DATA_CENTER);
+    private CrushNode buildNodeTree() {
+        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT);
+        CrushNode dc1 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
+        CrushNode dc2 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
         root.addChild(dc1);
         root.addChild(dc2);
 
-        dc1.addChild(new Node(CrushHierarchyLevel.NODE, (short)500));
-        dc1.addChild(new Node(CrushHierarchyLevel.NODE, (short)501));
-        dc1.addChild(new Node(CrushHierarchyLevel.NODE, (short)502));
-        dc1.addChild(new Node(CrushHierarchyLevel.NODE, (short)503));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)500));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)501));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)502));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)503));
 
-        dc2.addChild(new Node(CrushHierarchyLevel.NODE, (short)510));
-        dc2.addChild(new Node(CrushHierarchyLevel.NODE, (short)511));
-        dc2.addChild(new Node(CrushHierarchyLevel.NODE, (short)512));
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)510));
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)511));
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)512));
 
         return root;
     }

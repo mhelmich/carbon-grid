@@ -72,7 +72,7 @@ public class BaseTest {
     }
 
     private int getConsulPort() {
-        return 32769;
+        return 8500;
     }
 
     // not the nicest but effective

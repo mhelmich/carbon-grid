@@ -19,8 +19,10 @@ package org.carbon.grid.cluster;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
 
-import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * These nodes make up a decision tree.
@@ -33,9 +35,10 @@ import java.util.List;
  *   (all nodes in a particular data center for example)
  * - leaf: a leaf has an idea and represents a single node in the cluster
  */
-class Node {
+class CrushNode {
+    private final HashMap<String, Integer> nameToChild;
     // only buckets will have children
-    private final ArrayList<Node> children;
+    private final LinkedList<CrushNode> children;
     // statically seeded hash function
     // this hash function needs to produce consistent hashes
     private final HashFunction f = Hashing.murmur3_32(0);
@@ -48,38 +51,56 @@ class Node {
     private boolean isDead = false;
     private boolean isFull = false;
 
-    Node(CrushHierarchyLevel type) {
+    CrushNode(CrushHierarchyLevel type) {
         this.type = type;
         this.nodeId = null;
-        this.children = new ArrayList<>();
+        this.children = new LinkedList<>();
+        this.nameToChild = new HashMap<>();
     }
 
-    Node(CrushHierarchyLevel type, Short nodeId) {
+    CrushNode(CrushHierarchyLevel type, Short nodeId) {
         this.type = type;
         this.nodeId = nodeId;
         this.children = null;
+        this.nameToChild = null;
     }
 
     boolean isAvailable() {
         return !isFull && !isDead;
     }
 
-    void addChild(Node b) {
+    void addChild(CrushNode b) {
+        addChild(UUID.randomUUID().toString(), b);
+    }
+
+    void addChild(String name, CrushNode b) {
         if (isLeaf()) throw new IllegalStateException("Can't add child to leaf node");
         children.add(b);
+        nameToChild.put(name, children.size() - 1);
+    }
+
+    CrushNode getChildByName(String name) {
+        if (isLeaf()) throw new IllegalStateException("Can't get child from leaf node");
+        Integer idx = nameToChild.get(name);
+        if (idx == null) {
+            return null;
+        } else {
+            return children.get(idx);
+        }
     }
 
     CrushHierarchyLevel getCrushHierarchyTag() {
         return type;
     }
 
-    Node selectChild(Long cacheLineId, int rPrime) {
+    CrushNode selectChild(Long cacheLineId, int rPrime) {
         if (isLeaf()) throw new IllegalStateException("Can't select child from a leaf node");
         // selecting a child node today is done on basis of consistent hashing
         // other (better) placement methods are imaginable (especially when a node weight
         // as approximation of remaining space on the node is to be considered)
         // for more inspiration, see the original paper:
         // https://ceph.com/wp-content/uploads/2016/08/weil-crush-sc06.pdf
+        // TODO -- change this from consistent hashing to rendez-vous hashing
         int hash = f.hashLong(cacheLineId).asInt();
         hash = Math.abs(hash);
         hash += rPrime;
@@ -95,12 +116,13 @@ class Node {
         this.isDead = dead;
     }
 
-    List<Node> getChildren() {
+    List<CrushNode> getChildren() {
+        if (isLeaf()) throw new IllegalStateException("Can't get child from leaf node");
         return children;
     }
 
     private boolean isLeaf() {
-        return children == null;
+        return children == null || nameToChild == null;
     }
 
     short getNodeId() {

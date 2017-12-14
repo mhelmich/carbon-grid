@@ -20,7 +20,6 @@ import com.google.common.collect.ImmutableSet;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.Serializable;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -28,56 +27,49 @@ class NodeInfo implements Serializable {
     private final static String SEPARATOR = ";";
     private final static String SET_SEPARATOR = ",";
     final short nodeId;
-    // tri-state boolean => true, false, null are meaningful values
-    final Boolean isLeader;
+    final String dataCenter;
     final Set<Short> replicaIds;
     final short leaderId;
 
     NodeInfo(String s) {
         String[] tokens = s.split(SEPARATOR);
-        assert tokens.length == 3;
+        assert tokens.length == 4;
         this.nodeId = Short.valueOf(tokens[0]);
-        // isLeader can't be null as we have 3 tokens
-        this.isLeader = Boolean.valueOf(tokens[1]);
-        if (isLeader) {
-            String[] replicaIdsStr = tokens[2].split(SET_SEPARATOR);
-            Set<Short> replicaIdsTmp = new HashSet<>(replicaIdsStr.length);
-            for (String idStr : replicaIdsStr) {
+        this.dataCenter = tokens[1];
+        String[] replicaIdsStr = tokens[2].split(SET_SEPARATOR);
+        Set<Short> replicaIdsTmp = new HashSet<>(replicaIdsStr.length);
+        for (String idStr : replicaIdsStr) {
+            if (!idStr.isEmpty()) {
                 replicaIdsTmp.add(Short.valueOf(idStr));
             }
-            this.replicaIds = ImmutableSet.copyOf(replicaIdsTmp);
-            this.leaderId = -1;
-        } else {
-            this.replicaIds = Collections.emptySet();
-            this.leaderId = Short.valueOf(tokens[2]);
         }
+        this.replicaIds = ImmutableSet.copyOf(replicaIdsTmp);
+        this.leaderId = Short.valueOf(tokens[3]);
     }
 
-    NodeInfo(short nodeId, Set<Short> replicaIds) {
-        this(nodeId, true, replicaIds, (short)-1);
-    }
-
-    NodeInfo(short nodeId, short leaderId) {
-        this(nodeId, false, Collections.emptySet(), leaderId);
-    }
-
-    private NodeInfo(short nodeId, Boolean isLeader, Set<Short> replicaIds, short leaderId) {
+    NodeInfo(short nodeId, String dataCenter, Set<Short> replicaIds, short leaderId) {
         this.nodeId = nodeId;
-        this.isLeader = isLeader;
+        this.dataCenter = dataCenter;
         this.replicaIds = ImmutableSet.copyOf(replicaIds);
         this.leaderId = leaderId;
     }
 
+    NodeInfo(short nodeId, String dataCenter, Set<Short> replicaIds, int leaderId) {
+        this(nodeId, dataCenter, replicaIds, (short) leaderId);
+    }
+
     String toConsulValue() {
-        StringBuilder sb = new StringBuilder();
-        sb.append(nodeId).append(SEPARATOR).append(isLeader).append(SEPARATOR);
-        if (isLeader == null) {
-            throw new IllegalStateException("Can't publish node info with isLeader == null");
-        } else if (isLeader) {
-            sb.append(StringUtils.join(replicaIds, SET_SEPARATOR));
-        } else {
-            sb.append(leaderId);
-        }
-        return sb.toString();
+        return String.valueOf(nodeId) +
+                SEPARATOR +
+                dataCenter +
+                SEPARATOR +
+                StringUtils.join(replicaIds, SET_SEPARATOR) +
+                SEPARATOR +
+                leaderId;
+    }
+
+    @Override
+    public String toString() {
+        return toConsulValue();
     }
 }

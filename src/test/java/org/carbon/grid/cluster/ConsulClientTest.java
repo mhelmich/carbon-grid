@@ -20,7 +20,9 @@ import com.orbitz.consul.Consul;
 import org.carbon.grid.BaseTest;
 import org.junit.Test;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -28,6 +30,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -111,6 +114,78 @@ public class ConsulClientTest extends BaseTest {
             assertTrue(latch.await(TIMEOUT_SECS, TimeUnit.SECONDS));
         } finally {
             es.shutdown();
+        }
+    }
+
+    @Test
+    public void testGetNodeInfos() {
+        ScheduledExecutorService es = Executors.newScheduledThreadPool(2);
+        try (ConsulClient client1 = new ConsulClient(mockConsulConfig(), es)) {
+            List<NodeInfo> nodeInfos = client1.getAllNodeInfos();
+            assertEquals(0, nodeInfos.size());
+            NodeInfo client1NodeInfo = new NodeInfo(client1.myNodeId(), "dc1", Collections.emptySet(), -1);
+            assertTrue(client1.setMyNodeInfo(client1NodeInfo));
+            nodeInfos = client1.getAllNodeInfos();
+            assertEquals(1, nodeInfos.size());
+            try (ConsulClient client2 = new ConsulClient(mockConsulConfig(), es)) {
+                nodeInfos = client2.getAllNodeInfos();
+                assertEquals(1, nodeInfos.size());
+                NodeInfo client2NodeInfo = new NodeInfo(client2.myNodeId(), "dc1", Collections.emptySet(), -1);
+                client2.setMyNodeInfo(client2NodeInfo);
+                nodeInfos = client1.getAllNodeInfos();
+                assertEquals(2, nodeInfos.size());
+            }
+        }
+    }
+
+    @Test
+    public void testBasicConsulIO() {
+        ScheduledExecutorService es = Executors.newScheduledThreadPool(2);
+        try (ConsulClient client = new ConsulClient(mockConsulConfig(), es)) {
+            String key = UUID.randomUUID().toString();
+            String value = UUID.randomUUID().toString();
+            assertTrue(client.putValue(key, value));
+            Optional<String> strOpt = client.getValueAsString(key);
+            assertTrue(strOpt.isPresent());
+            assertEquals(value, strOpt.get());
+        }
+    }
+
+    @Test
+    public void testBuildCrushNodeHierarchy() {
+        String dc1 = "dc1";
+        String dc2 = "dc2";
+        ScheduledExecutorService es = Executors.newScheduledThreadPool(9);
+        try (ConsulClient client1 = new ConsulClient(mockConsulConfig(), es)) {
+            client1.setMyNodeInfo(dc1, -1);
+            try (ConsulClient client2 = new ConsulClient(mockConsulConfig(), es)) {
+                client2.setMyNodeInfo(dc2, -1);
+                try (ConsulClient client3 = new ConsulClient(mockConsulConfig(), es)) {
+                    client3.setMyNodeInfo(dc2, -1);
+                    try (ConsulClient client4 = new ConsulClient(mockConsulConfig(), es)) {
+                        client4.setMyNodeInfo(dc1, -1);
+                        try (ConsulClient client5 = new ConsulClient(mockConsulConfig(), es)) {
+                            client5.setMyNodeInfo(dc2, -1);
+                            try (ConsulClient client6 = new ConsulClient(mockConsulConfig(), es)) {
+                                client6.setMyNodeInfo(dc1, -1);
+                                try (ConsulClient client7 = new ConsulClient(mockConsulConfig(), es)) {
+                                    client7.setMyNodeInfo(dc1, -1);
+
+                                    CrushNode cn = client1.buildCrushNodeHierarchy();
+                                    assertNotNull(cn);
+                                    assertEquals(2, cn.getChildren().size());
+                                    CrushNode dc1Node = cn.getChildByName(dc1);
+                                    assertNotNull(dc1Node);
+                                    assertEquals(4, dc1Node.getChildren().size());
+                                    CrushNode dc2Node = cn.getChildByName(dc2);
+                                    assertNotNull(dc2Node);
+                                    assertEquals(3, dc2Node.getChildren().size());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
