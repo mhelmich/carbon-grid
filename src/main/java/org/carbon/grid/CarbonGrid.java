@@ -143,11 +143,8 @@ public final class CarbonGrid implements Closeable {
         this.configProvider = configProvider;
         createInjector(configProvider);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                shutdownGracefully();
-            } catch (IOException xcp) {
-                logger.warn("Error during shutdown", xcp);
-            }
+            logger.info("Shutting down carbon grid node {} ...", cluster == null ? "" : cluster.myNodeId());
+            shutdownGracefully();
         }));
         printBanner();
     }
@@ -178,9 +175,20 @@ public final class CarbonGrid implements Closeable {
         }
     }
 
-    public void shutdownGracefully() throws IOException {
-        getCluster().close();
-        getCache().close();
+    private void closeQuietly(Closeable closeable) {
+        if (closeable != null) {
+            try {
+                closeable.close();
+            } catch (IOException xcp) {
+                logger.error("", xcp);
+            }
+        }
+    }
+
+    public void shutdownGracefully() {
+        injector = null;
+        closeQuietly(cluster);
+        closeQuietly(cache);
     }
 
     public Cache getCache() {
@@ -192,7 +200,7 @@ public final class CarbonGrid implements Closeable {
     }
 
     public boolean isUp() {
-        return cluster.isUp();
+        return cluster != null && cluster.isUp();
     }
 
     @Override
