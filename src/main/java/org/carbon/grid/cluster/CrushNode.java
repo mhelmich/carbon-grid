@@ -121,7 +121,7 @@ class CrushNode {
         return children;
     }
 
-    private boolean isLeaf() {
+    boolean isLeaf() {
         return children == null || nameToChild == null;
     }
 

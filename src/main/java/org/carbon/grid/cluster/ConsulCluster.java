@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * This class takes care of everything that involves global state in the cluster.
@@ -104,8 +105,8 @@ class ConsulCluster implements Cluster {
         this.myNodeId = consulClient.myNodeId();
         // TODO -- hook this into the config framework
         this.crushMap = CrushMap.builder()
-                .addPlacementRule(CrushHierarchyLevel.DATA_CENTER, 2, i -> true)
-                .addPlacementRule(CrushHierarchyLevel.NODE, 1, i -> true)
+                .addPlacementRule(CrushHierarchyLevel.DATA_CENTER, 2, wrapPredicate(i -> true))
+                .addPlacementRule(CrushHierarchyLevel.NODE, 1, wrapPredicate(i -> true))
                 .build();
         this.replicaPlacer = new ReplicaPlacer(myNodeId, consulConfig, consulClient, crushMap, myReplicaIds);
         // this method internally uses the executor service
@@ -135,6 +136,20 @@ class ConsulCluster implements Cluster {
         setDefaultCacheLineIdSeed();
         triggerGloballyUniqueIdAllocator();
         this.isUp.set(true);
+    }
+
+    private Predicate<CrushNode> wrapPredicate(Predicate<CrushNode> p) {
+        // this makes it so that a node doesn't select itself as replica
+        // BEWARE: changing this is a little bit dicey since executing getNodeId() might throw
+        // a unchecked exception ... I know it's not the fine British way of writing code
+        // for now though that's what it is so don't trust intellij on the simplification suggestion
+        return crushNode -> {
+            if (crushNode.isLeaf()) {
+                return myNodeId != crushNode.getNodeId() && p.test(crushNode);
+            } else {
+                return true;
+            }
+        };
     }
 
     private void setDefaultCacheLineIdSeed() {

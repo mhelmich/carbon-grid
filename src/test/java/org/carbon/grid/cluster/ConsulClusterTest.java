@@ -124,16 +124,24 @@ public class ConsulClusterTest extends BaseTest {
 
     @Test
     public void testReplicaSupplier() throws IOException, InterruptedException {
-        try (ConsulCluster cluster123 = mockConsulCluster(7777, emptyPeerHandler)) {
-            try (ConsulCluster cluster456 = mockConsulCluster(8888, emptyPeerHandler)) {
-                try (ConsulCluster cluster789 = mockConsulCluster(9999, emptyPeerHandler)) {
+        String dataCenter1 = "dc1";
+        String dataCenter2 = "dc2";
+        try (ConsulCluster cluster123 = mockConsulCluster(7777, dataCenter1, emptyPeerHandler)) {
+            ReplicaIdSupplier supplier = cluster123.getReplicaIdSupplier();
+            assertEquals(0, supplier.get().size());
+            try (ConsulCluster cluster456 = mockConsulCluster(8888, dataCenter1, emptyPeerHandler)) {
+                assertEquals(0, supplier.get().size());
+                try (ConsulCluster cluster789 = mockConsulCluster(9999, dataCenter2, emptyPeerHandler)) {
                     // Test.flap
                     Thread.sleep(500);
-                    ReplicaIdSupplier supplier = cluster123.getReplicaIdSupplier();
                     assertEquals(2, supplier.get().size());
                 }
             }
         }
+    }
+
+    private ConsulCluster mockConsulCluster(int servicePort, String dataCenter, PeerChangeConsumer peerChangeConsumer) {
+        return new ConsulCluster(mockServerConfig(servicePort), mockConsulConfig(dataCenter), peerChangeConsumer);
     }
 
     private ConsulCluster mockConsulCluster(int servicePort, PeerChangeConsumer peerChangeConsumer) {

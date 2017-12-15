@@ -28,8 +28,6 @@ import java.util.stream.Collectors;
  *
  * It acts as rule table store and at the same time is able to compute
  * crush replica placements from a decision tree and a cache line id.
- *
- * TODO: make it so that I can't select my own node id as replica
  */
 class CrushMap {
     private final static int NUM_ALLOWED_RETRIES = 5;
