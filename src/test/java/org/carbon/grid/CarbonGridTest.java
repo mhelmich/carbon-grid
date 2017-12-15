@@ -16,14 +16,11 @@
 
 package org.carbon.grid;
 
-import org.cfg4j.source.ConfigurationSource;
-import org.cfg4j.source.classpath.ClasspathConfigurationSource;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 
 import static org.junit.Assert.assertTrue;
@@ -31,7 +28,7 @@ import static org.junit.Assert.assertTrue;
 public class CarbonGridTest {
     @Test
     public void testStartup() throws IOException {
-        try (CarbonGrid grid = CarbonGrid.innerStart(getTestConfig())) {
+        try (CarbonGrid grid = new CarbonGridFactory().createCarbonGrid()) {
             assertTrue(grid.isUp());
         }
     }
@@ -40,14 +37,8 @@ public class CarbonGridTest {
     public void testStartupWithFileConfig() throws IOException {
         Path tmpConfig = Files.createTempFile("cg-tmp-cfg", ".yml");
         assertTrue(Files.copy(getClass().getResourceAsStream("/carbon-grid.yaml"), tmpConfig, StandardCopyOption.REPLACE_EXISTING) > 0);
-        try (CarbonGrid g = CarbonGrid.start(tmpConfig)) {
+        try (CarbonGrid g = new CarbonGridFactory().createCarbonGrid(tmpConfig)) {
             assertTrue(g.isUp());
         }
-    }
-
-    private ConfigurationSource getTestConfig() {
-        return new ClasspathConfigurationSource(
-                () -> Paths.get("carbon-grid.yaml")
-        );
     }
 }

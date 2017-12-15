@@ -16,7 +16,6 @@
 
 package org.carbon.grid;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
@@ -26,120 +25,22 @@ import org.carbon.grid.cache.InternalCache;
 import org.carbon.grid.cluster.Cluster;
 import org.carbon.grid.cluster.ClusterModule;
 import org.cfg4j.provider.ConfigurationProvider;
-import org.cfg4j.provider.ConfigurationProviderBuilder;
-import org.cfg4j.source.ConfigurationSource;
-import org.cfg4j.source.classpath.ClasspathConfigurationSource;
-import org.cfg4j.source.context.environment.Environment;
-import org.cfg4j.source.context.environment.ImmutableEnvironment;
-import org.cfg4j.source.files.FilesConfigurationSource;
-import org.cfg4j.source.reload.ReloadStrategy;
-import org.cfg4j.source.reload.strategy.PeriodicalReloadStrategy;
-import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.Closeable;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.concurrent.TimeUnit;
 
 public final class CarbonGrid implements Closeable {
     private final static Logger logger = LoggerFactory.getLogger(CarbonGrid.class);
-    // you can have multiple grids inside the same JVM
-    // the key into the map is a hash code (currently) on a config source
-    private static final NonBlockingHashMap<Integer, CarbonGrid> hashToGrid = new NonBlockingHashMap<>();
-
-    private static void printUsage() {
-        logger.error("Didn't provide a valid command line!");
-        logger.error("java -jar carbon-grid.jar server <path-to-config-file>");
-    }
-
-    /**
-     * Stand-alone data node entry point.
-     * You have to start CarbonGrid by providing a command line like this:
-     * java -jar carbon-grid.jar server <path-to-config-file>
-     */
-    public static void main(String[] args) {
-        if (args.length != 2) {
-            printUsage();
-            return;
-        }
-
-        if (!"server".equals(args[0])) {
-            printUsage();
-            return;
-        }
-
-        logger.info("Starting as standalone data node with config file at {}", args[1]);
-        Path configFile = Paths.get(args[1]);
-        start(configFile);
-    }
-
-    /**
-     * Start carbon grid and leave it to itself to find configurations.
-     */
-    public static CarbonGrid start() throws CarbonGridException {
-        logger.info("Searching for carbon-grid.yaml on the class path");
-        ConfigurationSource cs = new ClasspathConfigurationSource(
-                () -> Paths.get("carbon-grid.yaml")
-        );
-
-        return innerStart(cs);
-    }
-
-    /**
-     * Start carbon grid and point it to the config file it is supposed to load.
-     */
-    public static CarbonGrid start(Path configFile) throws CarbonGridException {
-        Path absPath = configFile.toAbsolutePath();
-        logger.info("Searching for config file here: {}", absPath);
-        if (!Files.exists(configFile)) {
-            throw new CarbonGridException("Config file " + absPath + " doesn't exist!!");
-        }
-
-        ConfigurationSource cs = new FilesConfigurationSource(absPath::getFileName);
-        Environment ce = new ImmutableEnvironment(absPath.getParent().toString());
-        ReloadStrategy reloadStrategy = new PeriodicalReloadStrategy(1, TimeUnit.MINUTES);
-        ConfigurationProvider configProvider = new ConfigurationProviderBuilder()
-                .withConfigurationSource(cs)
-                .withEnvironment(ce)
-                .withReloadStrategy(reloadStrategy)
-                .build();
-        return innerStart(configProvider);
-    }
-
-    /**
-     * Start carbon grid and point it to the config file it is supposed to load.
-     */
-    public static CarbonGrid start(File configFile) throws CarbonGridException {
-        return start(configFile.toPath());
-    }
-
-    @VisibleForTesting
-    static CarbonGrid innerStart(ConfigurationSource cs) {
-        ConfigurationProvider configProvider = new ConfigurationProviderBuilder()
-                .withConfigurationSource(cs)
-                .build();
-
-        return innerStart(configProvider);
-    }
-
-    private static CarbonGrid innerStart(ConfigurationProvider configProvider) {
-        CarbonGrid grid = hashToGrid.putIfAbsent(configProvider.hashCode(), new CarbonGrid(configProvider));
-        return grid == null ? hashToGrid.get(configProvider.hashCode()) : grid;
-    }
-
     private final ConfigurationProvider configProvider;
     private Injector injector;
     private Cache cache;
     private Cluster cluster;
 
-    private CarbonGrid(ConfigurationProvider configProvider) {
+    CarbonGrid(ConfigurationProvider configProvider) {
         this.configProvider = configProvider;
         createInjector(configProvider);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
