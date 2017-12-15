@@ -233,6 +233,7 @@ public final class CarbonGrid implements Closeable {
         Integer port();
         Integer timeout();
         Integer numCheckinFailuresToShutdown();
+        String dataCenterName();
     }
 
     public interface CacheConfig {

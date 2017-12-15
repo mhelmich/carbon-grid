@@ -28,6 +28,8 @@ import java.util.stream.Collectors;
  *
  * It acts as rule table store and at the same time is able to compute
  * crush replica placements from a decision tree and a cache line id.
+ *
+ * TODO: make it so that I can't select my own node id as replica
  */
 class CrushMap {
     private final static int NUM_ALLOWED_RETRIES = 5;
@@ -65,6 +67,8 @@ class CrushMap {
     static class Builder {
         private final LinkedList<Rule> rules = new LinkedList<>();
 
+        private Builder() {}
+
         Builder addPlacementRule(CrushHierarchyLevel level, int numNodesToSelect, Predicate<CrushNode> predicate) {
             rules.add(new Rule(level, numNodesToSelect, predicate));
             return this;
@@ -92,6 +96,7 @@ class CrushMap {
 
     // the crush algorithm code
     private List<CrushNode> select(Long cacheLineId, CrushNode parent, int numItemsToSelect, boolean firstN, Predicate<CrushNode> matchesType) {
+        if (numItemsToSelect <= 0) return Collections.emptyList();
         if (parent.getChildren().size() < numItemsToSelect) throw new RuntimeException("Can't pick " + numItemsToSelect + " nodes out of " + parent.getChildren().size() + " available nodes.");
         List<CrushNode> selected = new LinkedList<>();
 

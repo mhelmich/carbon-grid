@@ -18,6 +18,7 @@ package org.carbon.grid.cluster;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.net.HostAndPort;
+import com.google.common.primitives.Shorts;
 import com.orbitz.consul.Consul;
 import com.orbitz.consul.ConsulException;
 import com.orbitz.consul.NotRegisteredException;
@@ -94,15 +95,14 @@ class ConsulClient implements Closeable {
     }
 
     boolean setMyNodeInfo(String dataCenter, int leaderId, short... replicaIds) {
-        HashSet<Short> replicas = new HashSet<>();
-        for (short id : replicaIds) {
-            replicas.add(id);
-        }
-        return setMyNodeInfo(new NodeInfo(myNodeId, dataCenter, replicas, leaderId));
+        return setMyNodeInfo(dataCenter, leaderId, Shorts.asList(replicaIds));
     }
 
-    CrushNode buildCrushNodeHierarchy() {
-        List<NodeInfo> nodeInfos = getAllNodeInfos();
+    boolean setMyNodeInfo(String dataCenter, int leaderId, List<Short> replicaIds) {
+        return setMyNodeInfo(new NodeInfo(myNodeId, dataCenter, new HashSet<>(replicaIds), leaderId));
+    }
+
+    CrushNode buildCrushNodeHierarchy(List<NodeInfo> nodeInfos) {
         Map<String, List<NodeInfo>> dcToNI = new HashMap<>();
 
         for (NodeInfo ni : nodeInfos) {

@@ -28,6 +28,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executors;
@@ -37,6 +39,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * This class takes care of everything that involves global state in the cluster.
@@ -84,6 +88,12 @@ class ConsulCluster implements Cluster {
     private final AtomicBoolean isUp = new AtomicBoolean(false);
     // counts how often consul can't be reached during regular checkins
     private final AtomicInteger consulCheckinFailureCounter = new AtomicInteger(0);
+    // the crush map encapsulating placement rules
+    private final CrushMap crushMap;
+    private final AtomicReference<List<Short>> myReplicaIds = new AtomicReference<>(Collections.emptyList());
+    // this consumer implementation deals with computing a list of node ids
+    // that serve as replica and notifying everybody
+    private final ReplicaPlacer replicaPlacer;
 
     @Inject
     ConsulCluster(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig, PeerChangeConsumer peerChangeConsumer) {
@@ -92,6 +102,12 @@ class ConsulCluster implements Cluster {
         this.executorService = Executors.newScheduledThreadPool(4, new DefaultThreadFactory("consul-group"));
         this.consulClient = new ConsulClient(consulConfig, executorService);
         this.myNodeId = consulClient.myNodeId();
+        // TODO -- hook this into the config framework
+        this.crushMap = CrushMap.builder()
+                .addPlacementRule(CrushHierarchyLevel.DATA_CENTER, 2, i -> true)
+                .addPlacementRule(CrushHierarchyLevel.NODE, 1, i -> true)
+                .build();
+        this.replicaPlacer = new ReplicaPlacer(myNodeId, consulConfig, consulClient, crushMap, myReplicaIds);
         // this method internally uses the executor service
         // beware to create the thing before calling into register
         consulClient.registerHealthCheckJobs(serverConfig.port(), (xcp) -> {
@@ -99,10 +115,18 @@ class ConsulCluster implements Cluster {
             logger.error("", xcp);
             // TODO -- build death pill logic here
         });
-        consulClient.registerNodeHealthWatcher(peerChangeConsumer);
-        consulClient.registerNodeInfoWatcher(NODE_INFO_KEY_PREFIX, nodeInfos -> {
 
-        });
+        try {
+            List<NodeInfo> allNodeInfos = consulClient.getAllNodeInfos();
+            replicaPlacer.accept(allNodeInfos);
+        } catch (RuntimeException xcp) {
+            logger.warn("Cluster too small!!", xcp);
+            myReplicaIds.set(Collections.emptyList());
+            consulClient.setMyNodeInfo(consulConfig.dataCenterName(), -1, Collections.emptyList());
+        }
+
+        consulClient.registerNodeHealthWatcher(peerChangeConsumer);
+        consulClient.registerNodeInfoWatcher(NODE_INFO_KEY_PREFIX, replicaPlacer);
         setDefaultCacheLineIdSeed();
         triggerGloballyUniqueIdAllocator();
         this.isUp.set(true);
@@ -210,6 +234,42 @@ class ConsulCluster implements Cluster {
             consulClient.close();
         } finally {
             executorService.shutdown();
+        }
+    }
+
+    static class ReplicaPlacer implements Consumer<List<NodeInfo>> {
+        private final short myNodeId;
+        private final CarbonGrid.ConsulConfig consulConfig;
+        private final ConsulClient consulClient;
+        private final CrushMap crushMap;
+        private final AtomicReference<List<Short>> myReplicaIds;
+
+        ReplicaPlacer(short myNodeId, CarbonGrid.ConsulConfig consulConfig, ConsulClient consulClient, CrushMap crushMap, AtomicReference<List<Short>> myReplicaIds) {
+            this.myNodeId = myNodeId;
+            this.consulConfig = consulConfig;
+            this.consulClient = consulClient;
+            this.crushMap = crushMap;
+            this.myReplicaIds = myReplicaIds;
+        }
+
+        @Override
+        public void accept(List<NodeInfo> nodeInfos) {
+            if (nodeInfos.isEmpty()) return;
+
+            try {
+                CrushNode newCrushNodeRoot = consulClient.buildCrushNodeHierarchy(nodeInfos);
+                List<Short> newReplicaIds = crushMap.calculateReplicaNodes(myNodeId, newCrushNodeRoot);
+                Collections.sort(newReplicaIds);
+                List<Short> oldReplicaIds = myReplicaIds.get();
+                if (!oldReplicaIds.equals(newReplicaIds)) {
+                    myReplicaIds.set(newReplicaIds);
+                    logger.info("New replicas for {}: {}", myNodeId, newReplicaIds);
+                    consulClient.setMyNodeInfo(consulConfig.dataCenterName(), -1, newReplicaIds);
+                }
+            } catch (RuntimeException xcp) {
+                logger.warn("Cluster too small!!");
+                myReplicaIds.set(Collections.emptyList());
+            }
         }
     }
 }

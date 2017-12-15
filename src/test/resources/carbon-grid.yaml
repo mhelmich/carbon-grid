@@ -15,6 +15,8 @@ consul:
     # number of failed attempts to reach consul
     # before the carbon grid node shuts itself down
     numCheckinFailuresToShutdown: 3
+    # the name of the data center this node is in
+    dataCenterName: "dc1"
 cache:
     # amount of memory that carbon grid will use on this machine in bytes
     # this refers to the off-heap memory carbon grid uses

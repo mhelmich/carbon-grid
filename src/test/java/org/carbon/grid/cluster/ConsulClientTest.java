@@ -18,16 +18,20 @@ package org.carbon.grid.cluster;
 
 import com.orbitz.consul.Consul;
 import org.carbon.grid.BaseTest;
+import org.carbon.grid.CarbonGrid;
 import org.junit.Test;
 
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -135,6 +139,8 @@ public class ConsulClientTest extends BaseTest {
                 nodeInfos = client1.getAllNodeInfos();
                 assertEquals(2, nodeInfos.size());
             }
+        } finally {
+            es.shutdown();
         }
     }
 
@@ -148,6 +154,8 @@ public class ConsulClientTest extends BaseTest {
             Optional<String> strOpt = client.getValueAsString(key);
             assertTrue(strOpt.isPresent());
             assertEquals(value, strOpt.get());
+        } finally {
+            es.shutdown();
         }
     }
 
@@ -171,7 +179,7 @@ public class ConsulClientTest extends BaseTest {
                                 try (ConsulClient client7 = new ConsulClient(mockConsulConfig(), es)) {
                                     client7.setMyNodeInfo(dc1, -1);
 
-                                    CrushNode cn = client1.buildCrushNodeHierarchy();
+                                    CrushNode cn = client1.buildCrushNodeHierarchy(client1.getAllNodeInfos());
                                     assertNotNull(cn);
                                     assertEquals(2, cn.getChildren().size());
                                     CrushNode dc1Node = cn.getChildByName(dc1);
@@ -184,6 +192,43 @@ public class ConsulClientTest extends BaseTest {
                             }
                         }
                     }
+                }
+            }
+        } finally {
+            es.shutdown();
+        }
+    }
+
+    @Test
+    public void testReplicaPlacement() {
+        short myNodeId = 15;
+        CarbonGrid.ConsulConfig cc1 = mockConsulConfig("dc1");
+        CarbonGrid.ConsulConfig cc2 = mockConsulConfig("dc2");
+        CrushMap crushMap = CrushMap.builder()
+                .addPlacementRule(CrushHierarchyLevel.DATA_CENTER, 2, i -> true)
+                .addPlacementRule(CrushHierarchyLevel.NODE, 1, i -> true)
+                .build();
+        AtomicReference<List<Short>> myReplicaIds = new AtomicReference<>(Collections.emptyList());
+
+        ScheduledExecutorService es = Executors.newScheduledThreadPool(2);
+        try (ConsulClient client1 = new ConsulClient(mockConsulConfig(), es)) {
+            client1.setMyNodeInfo(cc1.dataCenterName(), -1);
+            ConsulCluster.ReplicaPlacer rp = new ConsulCluster.ReplicaPlacer(myNodeId, cc1, client1, crushMap, myReplicaIds);
+            List<NodeInfo> nodeInfos = client1.getAllNodeInfos();
+            rp.accept(nodeInfos);
+            assertTrue(myReplicaIds.get().isEmpty());
+            try (ConsulClient client2 = new ConsulClient(mockConsulConfig(), es)) {
+                client2.setMyNodeInfo(cc2.dataCenterName(), -1);
+                nodeInfos = client1.getAllNodeInfos();
+                rp.accept(nodeInfos);
+                assertEquals(2, myReplicaIds.get().size());
+
+                Set<Short> nodeIds = new HashSet<>();
+                nodeIds.add(client1.myNodeId());
+                nodeIds.add(client2.myNodeId());
+
+                for (Short s : myReplicaIds.get()) {
+                    assertTrue(nodeIds.remove(s));
                 }
             }
         }

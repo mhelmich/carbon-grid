@@ -42,11 +42,19 @@ public class BaseTest {
     }
 
     protected CarbonGrid.ConsulConfig mockConsulConfig() {
-        CarbonGrid.ConsulConfig sc = Mockito.mock(CarbonGrid.ConsulConfig.class);
-        when(sc.host()).thenReturn("localhost");
-        when(sc.port()).thenReturn(getConsulPort());
-        when(sc.timeout()).thenReturn(60);
-        return sc;
+        CarbonGrid.ConsulConfig cc = Mockito.mock(CarbonGrid.ConsulConfig.class);
+        when(cc.host()).thenReturn("localhost");
+        when(cc.port()).thenReturn(getConsulPort());
+        when(cc.timeout()).thenReturn(60);
+        String dc = random.nextInt() % 2 == 0 ? "dc1" : "dc2";
+        when(cc.dataCenterName()).thenReturn(dc);
+        return cc;
+    }
+
+    protected CarbonGrid.ConsulConfig mockConsulConfig(String dataCenter) {
+        CarbonGrid.ConsulConfig cc = mockConsulConfig();
+        when(cc.dataCenterName()).thenReturn(dataCenter);
+        return cc;
     }
 
     protected CarbonGrid.CacheConfig mockCacheConfig() {
