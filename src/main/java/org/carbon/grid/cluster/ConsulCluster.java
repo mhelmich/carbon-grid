@@ -89,12 +89,9 @@ class ConsulCluster implements Cluster {
     private final AtomicBoolean isUp = new AtomicBoolean(false);
     // counts how often consul can't be reached during regular checkins
     private final AtomicInteger consulCheckinFailureCounter = new AtomicInteger(0);
-    // the crush map encapsulating placement rules
-    private final CrushMap crushMap;
+    // the crush map computes the ids of replica nodes for this node
+    // the cache will be interested in these node ids and this here is the "API" to retrieve them
     private final AtomicReference<List<Short>> myReplicaIds = new AtomicReference<>(Collections.emptyList());
-    // this consumer implementation deals with computing a list of node ids
-    // that serve as replica and notifying everybody
-    private final ReplicaPlacer replicaPlacer;
 
     @Inject
     ConsulCluster(CarbonGrid.ServerConfig serverConfig, CarbonGrid.ConsulConfig consulConfig, PeerChangeConsumer peerChangeConsumer) {
@@ -104,11 +101,14 @@ class ConsulCluster implements Cluster {
         this.consulClient = new ConsulClient(consulConfig, executorService);
         this.myNodeId = consulClient.myNodeId();
         // TODO -- hook this into the config framework
-        this.crushMap = CrushMap.builder()
+        // the crush map encapsulating placement rules
+        CrushMap crushMap = CrushMap.builder()
                 .addPlacementRule(CrushHierarchyLevel.DATA_CENTER, 2, wrapPredicate(i -> true))
                 .addPlacementRule(CrushHierarchyLevel.NODE, 1, wrapPredicate(i -> true))
                 .build();
-        this.replicaPlacer = new ReplicaPlacer(myNodeId, consulConfig, consulClient, crushMap, myReplicaIds);
+        // this consumer implementation deals with computing a list of node ids
+        // that serve as replica and notifying everybody
+        ReplicaPlacer replicaPlacer = new ReplicaPlacer(myNodeId, consulConfig, consulClient, crushMap, myReplicaIds);
         // this method internally uses the executor service
         // beware to create the thing before calling into register
         consulClient.registerHealthCheckJobs(serverConfig.port(), (xcp) -> {
