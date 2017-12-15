@@ -34,4 +34,12 @@ public interface Cluster extends Closeable {
      * Returns a id allocator that spits out globally unique cache line ids.
      */
     GloballyUniqueIdAllocator getIdAllocator();
+
+    /**
+     * This returns a replica supplier which in turn
+     * can be used to get all replica ids for this node.
+     * The supplier can be called for every usage and
+     * the returning values don't need to be cached.
+     */
+    ReplicaSupplier getReplicaIds();
 }

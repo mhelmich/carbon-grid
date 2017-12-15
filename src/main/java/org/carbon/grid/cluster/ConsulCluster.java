@@ -218,6 +218,11 @@ class ConsulCluster implements Cluster {
         };
     }
 
+    @Override
+    public ReplicaSupplier getReplicaIds() {
+        return myReplicaIds::get;
+    }
+
     // this method just returns the current state (as far as nodes and their health goes) from consul
     Map<Short, InetSocketAddress> getHealthyNodes() {
         return consulClient.getHealthyNodes();
