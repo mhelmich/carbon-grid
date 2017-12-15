@@ -41,5 +41,5 @@ public interface Cluster extends Closeable {
      * The supplier can be called for every usage and
      * the returning values don't need to be cached.
      */
-    ReplicaSupplier getReplicaIds();
+    ReplicaIdSupplier getReplicaIdSupplier();
 }

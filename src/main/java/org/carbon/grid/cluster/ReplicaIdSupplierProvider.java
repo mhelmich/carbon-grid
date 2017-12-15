@@ -16,9 +16,24 @@
 
 package org.carbon.grid.cluster;
 
-import java.util.List;
-import java.util.function.Supplier;
+import com.google.inject.Inject;
+import com.google.inject.Provider;
+import com.google.inject.Singleton;
 
-@FunctionalInterface
-public interface ReplicaSupplier extends Supplier<List<Short>> {
+/**
+ * Guice cyclic dependency boiler plate.
+ */
+@Singleton
+class ReplicaIdSupplierProvider implements Provider<ReplicaIdSupplier> {
+    private final Cluster cluster;
+
+    @Inject
+    ReplicaIdSupplierProvider(Cluster cluster) {
+        this.cluster = cluster;
+    }
+
+    @Override
+    public ReplicaIdSupplier get() {
+        return cluster.getReplicaIdSupplier();
+    }
 }

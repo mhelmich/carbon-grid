@@ -116,13 +116,18 @@ class ConsulCluster implements Cluster {
             // TODO -- build death pill logic here
         });
 
+        // set my (incomplete) node info before we compute replicas
+        consulClient.setMyNodeInfo(consulConfig.dataCenterName(), -1, Collections.emptyList());
+
         try {
             List<NodeInfo> allNodeInfos = consulClient.getAllNodeInfos();
             replicaPlacer.accept(allNodeInfos);
         } catch (RuntimeException xcp) {
-            logger.warn("Cluster too small!!", xcp);
-            myReplicaIds.set(Collections.emptyList());
-            consulClient.setMyNodeInfo(consulConfig.dataCenterName(), -1, Collections.emptyList());
+            logger.warn("Replica count dropped under configured threshold!");
+            // not doing anything sounds to be a smarter idea here
+            // that way the cluster remains functional even though
+            // we don't have the number of replicas that we'd like to have
+            //myReplicaIds.set(Collections.emptyList());
         }
 
         consulClient.registerNodeHealthWatcher(peerChangeConsumer);
@@ -219,7 +224,7 @@ class ConsulCluster implements Cluster {
     }
 
     @Override
-    public ReplicaSupplier getReplicaIds() {
+    public ReplicaIdSupplier getReplicaIdSupplier() {
         return myReplicaIds::get;
     }
 
@@ -272,8 +277,11 @@ class ConsulCluster implements Cluster {
                     consulClient.setMyNodeInfo(consulConfig.dataCenterName(), -1, newReplicaIds);
                 }
             } catch (RuntimeException xcp) {
-                logger.warn("Cluster too small!!");
-                myReplicaIds.set(Collections.emptyList());
+                logger.warn("Replica count dropped under configured threshold!");
+                // not doing anything sounds to be a smarter idea here
+                // that way the cluster remains functional even though
+                // we don't have the number of replicas that we'd like to have
+                //myReplicaIds.set(Collections.emptyList());
             }
         }
     }
