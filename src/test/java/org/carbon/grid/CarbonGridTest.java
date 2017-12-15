@@ -29,6 +29,7 @@ public class CarbonGridTest {
     @Test
     public void testStartup() throws IOException {
         try (CarbonGrid grid = new CarbonGridFactory().createCarbonGrid()) {
+            grid.start();
             assertTrue(grid.isUp());
         }
     }
@@ -38,6 +39,7 @@ public class CarbonGridTest {
         Path tmpConfig = Files.createTempFile("cg-tmp-cfg", ".yml");
         assertTrue(Files.copy(getClass().getResourceAsStream("/carbon-grid.yaml"), tmpConfig, StandardCopyOption.REPLACE_EXISTING) > 0);
         try (CarbonGrid g = new CarbonGridFactory().createCarbonGrid(tmpConfig)) {
+            g.start();
             assertTrue(g.isUp());
         }
     }

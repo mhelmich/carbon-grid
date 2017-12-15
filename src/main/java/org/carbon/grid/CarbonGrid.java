@@ -42,12 +42,6 @@ public final class CarbonGrid implements Closeable {
 
     CarbonGrid(ConfigurationProvider configProvider) {
         this.configProvider = configProvider;
-        createInjector(configProvider);
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            logger.info("Shutting down carbon grid node {} ...", cluster == null ? "" : cluster.myNodeId());
-            shutdownGracefully();
-        }));
-        printBanner();
     }
 
     private void printBanner() {
@@ -59,6 +53,15 @@ public final class CarbonGrid implements Closeable {
         } catch (Exception xcp) {
             // no op
         }
+    }
+
+    void start() {
+        createInjector(configProvider);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            logger.info("Shutting down carbon grid node {} ...", cluster == null ? "" : cluster.myNodeId());
+            shutdownGracefully();
+        }));
+        printBanner();
     }
 
     private void createInjector(ConfigurationProvider configProvider) {
@@ -112,7 +115,7 @@ public final class CarbonGrid implements Closeable {
     /**
      * This module publishes all config objects to guice consumers.
      */
-    static class ConfigModule extends AbstractModule {
+    private static class ConfigModule extends AbstractModule {
         private final ConfigurationProvider configProvider;
 
         ConfigModule(ConfigurationProvider configProvider) {

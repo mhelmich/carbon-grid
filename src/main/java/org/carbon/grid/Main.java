@@ -80,6 +80,6 @@ public class Main {
     private void start(String pathToConfigFile) {
         Path configFile = Paths.get(pathToConfigFile);
         ConfigurationProvider configProvider = buildConfigProvider(configFile);
-        new CarbonGrid(configProvider);
+        new CarbonGrid(configProvider).start();
     }
 }
