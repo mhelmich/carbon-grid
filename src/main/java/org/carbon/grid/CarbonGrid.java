@@ -81,7 +81,7 @@ public final class CarbonGrid implements Closeable {
     }
 
     /**
-     * Start carbon grid and leave to itself to find configurations.
+     * Start carbon grid and leave it to itself to find configurations.
      */
     public static CarbonGrid start() throws CarbonGridException {
         logger.info("Searching for carbon-grid.yaml on the class path");
