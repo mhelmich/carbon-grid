@@ -165,19 +165,19 @@ public class ConsulClientTest extends BaseTest {
         String dc2 = "dc2";
         ScheduledExecutorService es = Executors.newScheduledThreadPool(9);
         try (ConsulClient client1 = new ConsulClient(mockConsulConfig(), es)) {
-            client1.setMyNodeInfo(dc1, -1);
+            client1.setMyNodeInfo(dc1, -1, Collections.emptyList());
             try (ConsulClient client2 = new ConsulClient(mockConsulConfig(), es)) {
-                client2.setMyNodeInfo(dc2, -1);
+                client2.setMyNodeInfo(dc2, -1, Collections.emptyList());
                 try (ConsulClient client3 = new ConsulClient(mockConsulConfig(), es)) {
-                    client3.setMyNodeInfo(dc2, -1);
+                    client3.setMyNodeInfo(dc2, -1, Collections.emptyList());
                     try (ConsulClient client4 = new ConsulClient(mockConsulConfig(), es)) {
-                        client4.setMyNodeInfo(dc1, -1);
+                        client4.setMyNodeInfo(dc1, -1, Collections.emptyList());
                         try (ConsulClient client5 = new ConsulClient(mockConsulConfig(), es)) {
-                            client5.setMyNodeInfo(dc2, -1);
+                            client5.setMyNodeInfo(dc2, -1, Collections.emptyList());
                             try (ConsulClient client6 = new ConsulClient(mockConsulConfig(), es)) {
-                                client6.setMyNodeInfo(dc1, -1);
+                                client6.setMyNodeInfo(dc1, -1, Collections.emptyList());
                                 try (ConsulClient client7 = new ConsulClient(mockConsulConfig(), es)) {
-                                    client7.setMyNodeInfo(dc1, -1);
+                                    client7.setMyNodeInfo(dc1, -1, Collections.emptyList());
 
                                     CrushNode cn = client1.buildCrushNodeHierarchy(client1.getAllNodeInfos());
                                     assertNotNull(cn);
@@ -212,13 +212,13 @@ public class ConsulClientTest extends BaseTest {
 
         ScheduledExecutorService es = Executors.newScheduledThreadPool(2);
         try (ConsulClient client1 = new ConsulClient(mockConsulConfig(), es)) {
-            client1.setMyNodeInfo(cc1.dataCenterName(), -1);
+            client1.setMyNodeInfo(cc1.dataCenterName(), -1, Collections.emptyList());
             ConsulCluster.ReplicaPlacer rp = new ConsulCluster.ReplicaPlacer(myNodeId, cc1, client1, crushMap, myReplicaIds);
             List<NodeInfo> nodeInfos = client1.getAllNodeInfos();
             rp.accept(nodeInfos);
             assertTrue(myReplicaIds.get().isEmpty());
             try (ConsulClient client2 = new ConsulClient(mockConsulConfig(), es)) {
-                client2.setMyNodeInfo(cc2.dataCenterName(), -1);
+                client2.setMyNodeInfo(cc2.dataCenterName(), -1, Collections.emptyList());
                 nodeInfos = client1.getAllNodeInfos();
                 rp.accept(nodeInfos);
                 assertEquals(2, myReplicaIds.get().size());

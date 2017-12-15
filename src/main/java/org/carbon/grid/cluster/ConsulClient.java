@@ -18,7 +18,6 @@ package org.carbon.grid.cluster;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.net.HostAndPort;
-import com.google.common.primitives.Shorts;
 import com.orbitz.consul.Consul;
 import com.orbitz.consul.ConsulException;
 import com.orbitz.consul.NotRegisteredException;
@@ -92,10 +91,6 @@ class ConsulClient implements Closeable {
 
     boolean setMyNodeInfo(NodeInfo myNodeInfo) {
         return putValue(ConsulCluster.NODE_INFO_KEY_PREFIX + myNodeIdStr, myNodeInfo.toConsulValue());
-    }
-
-    boolean setMyNodeInfo(String dataCenter, int leaderId, short... replicaIds) {
-        return setMyNodeInfo(dataCenter, leaderId, Shorts.asList(replicaIds));
     }
 
     boolean setMyNodeInfo(String dataCenter, int leaderId, List<Short> replicaIds) {
