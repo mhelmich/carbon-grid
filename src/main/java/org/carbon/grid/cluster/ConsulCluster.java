@@ -282,6 +282,10 @@ class ConsulCluster implements Cluster {
             if (nodeInfos.isEmpty()) return;
 
             try {
+                // this logic just creates a new tree every time node infos change
+                // according to Sage and Weil, dead (or unavailable) nodes need to remain in the
+                // crush tree in order to not reshuffle all the data
+                // TODO -- make it so that unavailable nodes are marked as such and not removed from the crush tree
                 CrushNode newCrushNodeRoot = consulClient.buildCrushNodeHierarchy(nodeInfos);
                 List<Short> newReplicaIds = crushMap.calculateReplicaNodes(myNodeId, newCrushNodeRoot);
                 Collections.sort(newReplicaIds);
