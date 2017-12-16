@@ -118,7 +118,11 @@ class ConsulCluster implements Cluster {
         });
 
         // set my (incomplete) node info before we compute replicas
-        consulClient.setMyNodeInfo(consulConfig.dataCenterName(), -1, Collections.emptyList());
+        try {
+            consulClient.setMyNodeInfo(consulConfig.dataCenterName(), Collections.emptyList(), Collections.emptyList());
+        } catch (IOException xcp) {
+            logger.error("Error writing node info", xcp);
+        }
 
         try {
             List<NodeInfo> allNodeInfos = consulClient.getAllNodeInfos();
@@ -293,7 +297,7 @@ class ConsulCluster implements Cluster {
                 if (!oldReplicaIds.equals(newReplicaIds)) {
                     myReplicaIds.set(newReplicaIds);
                     logger.info("New replicas for {}: {}", myNodeId, newReplicaIds);
-                    consulClient.setMyNodeInfo(consulConfig.dataCenterName(), -1, newReplicaIds);
+                    consulClient.setMyNodeInfo(consulConfig.dataCenterName(), Collections.emptyList(), newReplicaIds);
                 }
             } catch (RuntimeException xcp) {
                 logger.warn("Replica count dropped under configured threshold!");
@@ -301,6 +305,8 @@ class ConsulCluster implements Cluster {
                 // that way the cluster remains functional even though
                 // we don't have the number of replicas that we'd like to have
                 //myReplicaIds.set(Collections.emptyList());
+            } catch (IOException xcp) {
+                logger.error("Error writing node info", xcp);
             }
         }
     }

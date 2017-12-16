@@ -16,60 +16,98 @@
 
 package org.carbon.grid.cluster;
 
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 import com.google.common.collect.ImmutableSet;
-import org.apache.commons.lang3.StringUtils;
 
+import java.io.IOException;
 import java.io.Serializable;
-import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
+@JsonSerialize(using = NodeInfo.NodeInfoSerializer.class)
+@JsonDeserialize(using = NodeInfo.NodeInfoDeserializer.class)
 class NodeInfo implements Serializable {
-    private final static String SEPARATOR = ";";
-    private final static String SET_SEPARATOR = ",";
     final short nodeId;
     final String dataCenter;
     final Set<Short> replicaIds;
-    final short leaderId;
+    final Set<Short> leaderIds;
 
-    NodeInfo(String s) {
-        String[] tokens = s.split(SEPARATOR);
-        assert tokens.length == 4;
-        this.nodeId = Short.valueOf(tokens[0]);
-        this.dataCenter = tokens[1];
-        String[] replicaIdsStr = tokens[2].split(SET_SEPARATOR);
-        Set<Short> replicaIdsTmp = new HashSet<>(replicaIdsStr.length);
-        for (String idStr : replicaIdsStr) {
-            if (!idStr.isEmpty()) {
-                replicaIdsTmp.add(Short.valueOf(idStr));
-            }
-        }
-        this.replicaIds = ImmutableSet.copyOf(replicaIdsTmp);
-        this.leaderId = Short.valueOf(tokens[3]);
+    NodeInfo(short nodeId, String dataCenter, List<Short> replicaIds, List<Short> leaderIds) {
+        this(nodeId, dataCenter, ImmutableSet.copyOf(replicaIds), ImmutableSet.copyOf(leaderIds));
     }
 
-    NodeInfo(short nodeId, String dataCenter, Set<Short> replicaIds, short leaderId) {
+    NodeInfo(short nodeId, String dataCenter, Set<Short> replicaIds, Set<Short> leaderIds) {
         this.nodeId = nodeId;
         this.dataCenter = dataCenter;
-        this.replicaIds = ImmutableSet.copyOf(replicaIds);
-        this.leaderId = leaderId;
-    }
-
-    NodeInfo(short nodeId, String dataCenter, Set<Short> replicaIds, int leaderId) {
-        this(nodeId, dataCenter, replicaIds, (short) leaderId);
-    }
-
-    String toConsulValue() {
-        return String.valueOf(nodeId) +
-                SEPARATOR +
-                dataCenter +
-                SEPARATOR +
-                StringUtils.join(replicaIds, SET_SEPARATOR) +
-                SEPARATOR +
-                leaderId;
+        this.replicaIds = replicaIds;
+        this.leaderIds = leaderIds;
     }
 
     @Override
     public String toString() {
-        return toConsulValue();
+        return "nodeId: " + nodeId + " dataCenter: " + dataCenter + " leaderIds: " + leaderIds + " replicaIds: " + replicaIds;
+    }
+
+    static class NodeInfoSerializer extends StdSerializer<NodeInfo> {
+        NodeInfoSerializer() {
+            super(NodeInfo.class);
+        }
+
+        @Override
+        public void serialize(NodeInfo nodeInfo, JsonGenerator jgen, SerializerProvider serializerProvider) throws IOException {
+            jgen.writeStartObject();
+            jgen.writeNumberField("nodeId", nodeInfo.nodeId);
+            jgen.writeStringField("dataCenter", nodeInfo.dataCenter);
+            jgen.writeArrayFieldStart("leaderIds");
+            for (Short leaderId : nodeInfo.leaderIds) {
+                jgen.writeNumber(leaderId);
+            }
+            jgen.writeEndArray();
+            jgen.writeArrayFieldStart("replicaIds");
+            for (Short replicaId : nodeInfo.replicaIds) {
+                jgen.writeNumber(replicaId);
+            }
+            jgen.writeEndArray();
+            jgen.writeEndObject();
+        }
+    }
+
+    static class NodeInfoDeserializer extends StdDeserializer<NodeInfo> {
+        NodeInfoDeserializer() {
+            super(NodeInfo.class);
+        }
+
+        @Override
+        public NodeInfo deserialize(JsonParser jp, DeserializationContext deserializationContext) throws IOException, JsonProcessingException {
+            JsonNode jn = jp.getCodec().readTree(jp);
+            short nodeId = (short) jn.get("nodeId").asInt();
+            String dataCenter = jn.get("dataCenter").asText();
+
+            ArrayNode leaderIds = (ArrayNode) jn.get("leaderIds");
+            ImmutableSet.Builder<Short> leaderBuilder = ImmutableSet.builder();
+            for (int i = 0; i < leaderIds.size(); i++) {
+                short id = (short) leaderIds.get(i).asInt();
+                leaderBuilder.add(id);
+            }
+
+            ArrayNode replicaIds = (ArrayNode) jn.get("replicaIds");
+            ImmutableSet.Builder<Short> replicaBuilder = ImmutableSet.builder();
+            for (int i = 0; i < replicaIds.size(); i++) {
+                short id = (short) replicaIds.get(i).asInt();
+                replicaBuilder.add(id);
+            }
+
+            return new NodeInfo(nodeId, dataCenter, replicaBuilder.build(), leaderBuilder.build());
+        }
     }
 }

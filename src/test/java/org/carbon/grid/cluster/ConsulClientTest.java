@@ -21,6 +21,7 @@ import org.carbon.grid.BaseTest;
 import org.carbon.grid.CarbonGrid;
 import org.junit.Test;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -122,19 +123,19 @@ public class ConsulClientTest extends BaseTest {
     }
 
     @Test
-    public void testGetNodeInfos() {
+    public void testGetNodeInfos() throws IOException {
         ScheduledExecutorService es = Executors.newScheduledThreadPool(2);
         try (ConsulClient client1 = new ConsulClient(mockConsulConfig(), es)) {
             List<NodeInfo> nodeInfos = client1.getAllNodeInfos();
             assertEquals(0, nodeInfos.size());
-            NodeInfo client1NodeInfo = new NodeInfo(client1.myNodeId(), "dc1", Collections.emptySet(), -1);
+            NodeInfo client1NodeInfo = new NodeInfo(client1.myNodeId(), "dc1", Collections.emptySet(), Collections.emptySet());
             assertTrue(client1.setMyNodeInfo(client1NodeInfo));
             nodeInfos = client1.getAllNodeInfos();
             assertEquals(1, nodeInfos.size());
             try (ConsulClient client2 = new ConsulClient(mockConsulConfig(), es)) {
                 nodeInfos = client2.getAllNodeInfos();
                 assertEquals(1, nodeInfos.size());
-                NodeInfo client2NodeInfo = new NodeInfo(client2.myNodeId(), "dc1", Collections.emptySet(), -1);
+                NodeInfo client2NodeInfo = new NodeInfo(client2.myNodeId(), "dc1", Collections.emptySet(), Collections.emptySet());
                 client2.setMyNodeInfo(client2NodeInfo);
                 nodeInfos = client1.getAllNodeInfos();
                 assertEquals(2, nodeInfos.size());
@@ -160,24 +161,24 @@ public class ConsulClientTest extends BaseTest {
     }
 
     @Test
-    public void testBuildCrushNodeHierarchy() {
+    public void testBuildCrushNodeHierarchy() throws IOException {
         String dc1 = "dc1";
         String dc2 = "dc2";
         ScheduledExecutorService es = Executors.newScheduledThreadPool(9);
         try (ConsulClient client1 = new ConsulClient(mockConsulConfig(), es)) {
-            client1.setMyNodeInfo(dc1, -1, Collections.emptyList());
+            client1.setMyNodeInfo(dc1, Collections.emptyList(), Collections.emptyList());
             try (ConsulClient client2 = new ConsulClient(mockConsulConfig(), es)) {
-                client2.setMyNodeInfo(dc2, -1, Collections.emptyList());
+                client2.setMyNodeInfo(dc2, Collections.emptyList(), Collections.emptyList());
                 try (ConsulClient client3 = new ConsulClient(mockConsulConfig(), es)) {
-                    client3.setMyNodeInfo(dc2, -1, Collections.emptyList());
+                    client3.setMyNodeInfo(dc2, Collections.emptyList(), Collections.emptyList());
                     try (ConsulClient client4 = new ConsulClient(mockConsulConfig(), es)) {
-                        client4.setMyNodeInfo(dc1, -1, Collections.emptyList());
+                        client4.setMyNodeInfo(dc1, Collections.emptyList(), Collections.emptyList());
                         try (ConsulClient client5 = new ConsulClient(mockConsulConfig(), es)) {
-                            client5.setMyNodeInfo(dc2, -1, Collections.emptyList());
+                            client5.setMyNodeInfo(dc2, Collections.emptyList(), Collections.emptyList());
                             try (ConsulClient client6 = new ConsulClient(mockConsulConfig(), es)) {
-                                client6.setMyNodeInfo(dc1, -1, Collections.emptyList());
+                                client6.setMyNodeInfo(dc1, Collections.emptyList(), Collections.emptyList());
                                 try (ConsulClient client7 = new ConsulClient(mockConsulConfig(), es)) {
-                                    client7.setMyNodeInfo(dc1, -1, Collections.emptyList());
+                                    client7.setMyNodeInfo(dc1, Collections.emptyList(), Collections.emptyList());
 
                                     CrushNode cn = client1.buildCrushNodeHierarchy(client1.getAllNodeInfos());
                                     assertNotNull(cn);
@@ -200,7 +201,7 @@ public class ConsulClientTest extends BaseTest {
     }
 
     @Test
-    public void testReplicaPlacement() {
+    public void testReplicaPlacement() throws IOException {
         short myNodeId = 15;
         CarbonGrid.ConsulConfig cc1 = mockConsulConfig("dc1");
         CarbonGrid.ConsulConfig cc2 = mockConsulConfig("dc2");
@@ -212,13 +213,13 @@ public class ConsulClientTest extends BaseTest {
 
         ScheduledExecutorService es = Executors.newScheduledThreadPool(2);
         try (ConsulClient client1 = new ConsulClient(mockConsulConfig(), es)) {
-            client1.setMyNodeInfo(cc1.dataCenterName(), -1, Collections.emptyList());
+            client1.setMyNodeInfo(cc1.dataCenterName(), Collections.emptyList(), Collections.emptyList());
             ConsulCluster.ReplicaPlacer rp = new ConsulCluster.ReplicaPlacer(myNodeId, cc1, client1, crushMap, myReplicaIds);
             List<NodeInfo> nodeInfos = client1.getAllNodeInfos();
             rp.accept(nodeInfos);
             assertTrue(myReplicaIds.get().isEmpty());
             try (ConsulClient client2 = new ConsulClient(mockConsulConfig(), es)) {
-                client2.setMyNodeInfo(cc2.dataCenterName(), -1, Collections.emptyList());
+                client2.setMyNodeInfo(cc2.dataCenterName(), Collections.emptyList(), Collections.emptyList());
                 nodeInfos = client1.getAllNodeInfos();
                 rp.accept(nodeInfos);
                 assertEquals(2, myReplicaIds.get().size());

@@ -16,6 +16,7 @@
 
 package org.carbon.grid.cluster;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.net.HostAndPort;
 import com.orbitz.consul.Consul;
@@ -35,10 +36,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +59,7 @@ class ConsulClient implements Closeable {
 
     private final String consulSessionName = "session-" + UUID.randomUUID().toString();
     private final LinkedList<ConsulValueWatcher<?>> watchers = new LinkedList<>();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final CarbonGrid.ConsulConfig consulConfig;
     private final ScheduledExecutorService executorService;
@@ -89,12 +91,12 @@ class ConsulClient implements Closeable {
         return consul.sessionClient().createSession(session).getId();
     }
 
-    boolean setMyNodeInfo(NodeInfo myNodeInfo) {
-        return putValue(ConsulCluster.NODE_INFO_KEY_PREFIX + myNodeIdStr, myNodeInfo.toConsulValue());
+    boolean setMyNodeInfo(NodeInfo myNodeInfo) throws IOException {
+        return putValue(ConsulCluster.NODE_INFO_KEY_PREFIX + myNodeIdStr, objectMapper.writeValueAsString(myNodeInfo));
     }
 
-    boolean setMyNodeInfo(String dataCenter, int leaderId, List<Short> replicaIds) {
-        return setMyNodeInfo(new NodeInfo(myNodeId, dataCenter, new HashSet<>(replicaIds), leaderId));
+    boolean setMyNodeInfo(String dataCenter, List<Short> leaderIds, List<Short> replicaIds) throws IOException {
+        return setMyNodeInfo(new NodeInfo(myNodeId, dataCenter, replicaIds, leaderIds));
     }
 
     CrushNode buildCrushNodeHierarchy(List<NodeInfo> nodeInfos) {
@@ -134,7 +136,12 @@ class ConsulClient implements Closeable {
         for (String nodeInfoKey : nodeInfoKeys) {
             Optional<String> niOpt = getValueAsString(nodeInfoKey);
             if (niOpt.isPresent()) {
-                NodeInfo ni = new NodeInfo(niOpt.get());
+                NodeInfo ni = null;
+                try {
+                    ni = objectMapper.readValue(niOpt.get(), NodeInfo.class);
+                } catch (IOException e) {
+                    logger.error("Couldn't deserialize node info", e);
+                }
                 nodeInfos.add(ni);
             }
         }
@@ -215,7 +222,12 @@ class ConsulClient implements Closeable {
                         if (v.getValueAsString().isPresent()) {
                             String nodeInfoStr = v.getValueAsString().get();
                             if (!nodeInfoStr.isEmpty()) {
-                                NodeInfo ni = new NodeInfo(nodeInfoStr);
+                                NodeInfo ni = null;
+                                try {
+                                    ni = objectMapper.readValue(nodeInfoStr, NodeInfo.class);
+                                } catch (IOException xcp) {
+                                    logger.error("Key {} doesn't have a value", v.getKey(), xcp);
+                                }
                                 nis.add(ni);
                             } else {
                                 logger.warn("Key {} doesn't have a value", v.getKey());
