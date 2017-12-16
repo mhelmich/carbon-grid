@@ -41,7 +41,7 @@ class CrushNode {
     private final LinkedList<CrushNode> children;
     // statically seeded hash function
     // this hash function needs to produce consistent hashes
-    private final HashFunction f = Hashing.murmur3_32(0);
+    private final HashFunction f = Hashing.murmur3_32(2147483647);
 
     private final CrushHierarchyLevel type;
     // only for leaf nodes

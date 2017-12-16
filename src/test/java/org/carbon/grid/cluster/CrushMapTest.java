@@ -34,8 +34,8 @@ public class CrushMapTest {
 
         List<Short> nodeIds = crt.placeCacheLine(99L, root);
         assertEquals(2, nodeIds.size());
-        assertTrue(nodeIds.indexOf((short)511) >= 0);
-        assertTrue(nodeIds.indexOf((short)503) >= 0);
+        assertTrue(nodeIds.indexOf((short)510) >= 0);
+        assertTrue(nodeIds.indexOf((short)501) >= 0);
     }
 
     @Test
@@ -63,13 +63,13 @@ public class CrushMapTest {
 
         List<Short> nodeIds = crt.placeCacheLine(111L, root);
         assertEquals(2, nodeIds.size());
-        assertTrue(nodeIds.indexOf((short)511) >= 0);
+        assertTrue(nodeIds.indexOf((short)510) >= 0);
         assertTrue(nodeIds.indexOf((short)501) >= 0);
 
         node501.setFull(true);
         nodeIds = crt.placeCacheLine(111L, root);
         assertEquals(2, nodeIds.size());
-        assertTrue(nodeIds.indexOf((short)511) >= 0);
+        assertTrue(nodeIds.indexOf((short)510) >= 0);
         assertTrue(nodeIds.indexOf((short)502) >= 0);
     }
 
@@ -98,8 +98,8 @@ public class CrushMapTest {
 
         List<Short> nodeIds = crt.placeCacheLine(123456789L, root);
         assertEquals(2, nodeIds.size());
-        assertTrue(nodeIds.indexOf((short)511) >= 0);
-        assertTrue(nodeIds.indexOf((short)502) >= 0);
+        assertTrue(nodeIds.indexOf((short)512) >= 0);
+        assertTrue(nodeIds.indexOf((short)503) >= 0);
     }
 
     @Test(expected = RuntimeException.class)
