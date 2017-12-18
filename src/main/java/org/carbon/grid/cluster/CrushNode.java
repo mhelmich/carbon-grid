@@ -20,6 +20,7 @@ import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
+import java.nio.charset.Charset;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -38,9 +39,7 @@ class CrushNode {
     private final NonBlockingHashMap<String, Integer> nameToChild;
     // only buckets will have children
     private final CopyOnWriteArrayList<CrushNode> children;
-    // statically seeded hash function
-    // this hash function needs to produce consistent hashes
-    private final HashFunction f = Hashing.murmur3_32(2147483647);
+    private final Selector selector = new ConsistentHashSelector();
 
     private final CrushHierarchyLevel type;
     // only for leaf nodes
@@ -102,12 +101,7 @@ class CrushNode {
         // as approximation of remaining space on the node is to be considered)
         // for more inspiration, see the original paper:
         // https://ceph.com/wp-content/uploads/2016/08/weil-crush-sc06.pdf
-        // TODO -- change this from consistent hashing to rendez-vous hashing
-        int hash = f.hashLong(cacheLineId).asInt();
-        hash = Math.abs(hash);
-        hash += rPrime;
-        hash = (hash % children.size());
-        return children.get(hash);
+        return selector.select(cacheLineId, rPrime, children);
     }
 
     boolean isFull() {
@@ -147,5 +141,54 @@ class CrushNode {
     @Override
     public String toString() {
         return "nodeId: " + nodeId + " nodeName: " + nodeName + " children: " + children;
+    }
+
+    interface Selector {
+        CrushNode select(long cacheLineId, int rPrime, CopyOnWriteArrayList<CrushNode> children);
+    }
+
+    private static class ConsistentHashSelector implements Selector {
+        // statically seeded hash function
+        // this hash function needs to produce consistent hashes
+        private final HashFunction f = Hashing.murmur3_32(2147483647);
+
+        @Override
+        public CrushNode select(long cacheLineId, int rPrime, CopyOnWriteArrayList<CrushNode> children) {
+            int hash = f.hashLong(cacheLineId).asInt();
+            hash = Math.abs(hash);
+            // adding rPrime after hashing gives us a nice failover behavior
+            // where in case nodes are unavailable, we just hop over one more step
+            // to the next node
+            hash += rPrime;
+            hash = (hash % children.size());
+            return children.get(hash);
+        }
+    }
+
+    // TODO -- this needs a little more thinking
+    // the addition of rPrime doesn't provide a predictable failover behavior anymore
+    // maybe we're better off if the node chosen in case of unavailability is predictable
+    private static class RendezVousHashSelector implements Selector {
+        private final HashFunction f = Hashing.murmur3_32(2147483647);
+
+        @Override
+        public CrushNode select(long cacheLineId, int rPrime, CopyOnWriteArrayList<CrushNode> children) {
+            int maxValue = Integer.MIN_VALUE;
+            CrushNode theOneIWant = null;
+            for (CrushNode cn : children) {
+                int hash = f.newHasher()
+                        .putLong(cacheLineId)
+                        .putInt(rPrime)
+                        .putString(cn.getNodeName(), Charset.defaultCharset())
+                        .hash()
+                        .asInt();
+
+                if (hash > maxValue) {
+                    maxValue = hash;
+                    theOneIWant = cn;
+                }
+            }
+            return theOneIWant;
+        }
     }
 }
