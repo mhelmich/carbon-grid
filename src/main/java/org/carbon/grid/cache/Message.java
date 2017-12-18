@@ -81,6 +81,16 @@ abstract class Message implements Persistable {
         return sender;
     }
 
+    void writeByteBuf(MessageOutput out, ByteBuf buffer) throws IOException {
+        if (buffer == null) {
+            out.writeInt(0);
+        } else {
+            out.writeInt(buffer.capacity());
+            out.writeByteBuf(buffer.resetReaderIndex());
+            buffer.release();
+        }
+    }
+
     @Override
     public String toString() {
         return "message type: " + type + " messageSequenceNumber: " + messageSequenceNumber + " sender: " + sender + " lineId: " + lineId;
@@ -220,13 +230,7 @@ abstract class Message implements Persistable {
         public void write(MessageOutput out) throws IOException {
             super.write(out);
             out.writeInt(version);
-            if (data != null) {
-                out.writeInt(data.capacity());
-                out.writeByteBuf(data.resetReaderIndex());
-                data.release();
-            } else {
-                out.writeInt(0);
-            }
+            writeByteBuf(out, data);
         }
 
         @Override
@@ -373,13 +377,7 @@ abstract class Message implements Persistable {
                     out.writeShort(s);
                 }
             }
-            if (data == null) {
-                out.writeInt(0);
-            } else {
-                out.writeInt(data.capacity());
-                out.writeByteBuf(data.resetReaderIndex());
-                data.release();
-            }
+            writeByteBuf(out, data);
         }
 
         @Override
@@ -605,13 +603,7 @@ abstract class Message implements Persistable {
             out.writeLong(leaderEpoch);
             out.writeLong(lastAckedLeaderEpoch);
             out.writeInt(version);
-            if (buffer != null) {
-                out.writeInt(buffer.capacity());
-                out.writeByteBuf(buffer.resetReaderIndex());
-                buffer.release();
-            } else {
-                out.writeInt(0);
-            }
+            writeByteBuf(out, buffer);
         }
 
         @Override
@@ -784,13 +776,7 @@ abstract class Message implements Persistable {
         public void write(MessageOutput out) throws IOException {
             super.write(out);
             out.writeInt(version);
-            if (data == null) {
-                out.writeInt(0);
-            } else {
-                out.writeInt(data.capacity());
-                out.writeByteBuf(data.resetReaderIndex());
-                data.release();
-            }
+            writeByteBuf(out, data);
         }
 
         @Override
