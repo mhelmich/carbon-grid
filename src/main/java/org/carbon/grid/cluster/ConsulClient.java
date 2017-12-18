@@ -99,6 +99,37 @@ class ConsulClient implements Closeable {
         return setMyNodeInfo(new NodeInfo(myNodeId, dataCenter, replicaIds, leaderIds));
     }
 
+    void applyTreeToTree(CrushNode applyToMe, CrushNode treeToApply) {
+        List<CrushNode> children = applyToMe.getChildren();
+        for (CrushNode node : children) {
+            CrushNode n = treeToApply.getChildByName(node.getNodeName());
+            if (n == null) {
+                setDeadRecursively(node, true);
+            } else {
+                node.setDead(false);
+                node.setFull(n.isFull());
+                if (!n.isLeaf()) {
+                    applyTreeToTree(node, n);
+                }
+            }
+        }
+
+        for (CrushNode nodeToAdd : treeToApply.getChildren()) {
+            if (applyToMe.getChildByName(nodeToAdd.getNodeName()) == null) {
+                applyToMe.addChild(nodeToAdd.getNodeName(), nodeToAdd);
+            }
+        }
+    }
+
+    private void setDeadRecursively(CrushNode node, boolean isDead) {
+        node.setDead(isDead);
+        if (!node.isLeaf()) {
+            for (CrushNode child : node.getChildren()) {
+                setDeadRecursively(child, isDead);
+            }
+        }
+    }
+
     CrushNode buildCrushNodeHierarchy(List<NodeInfo> nodeInfos) {
         Map<String, List<NodeInfo>> dcToNI = new HashMap<>();
 
@@ -112,18 +143,19 @@ class ConsulClient implements Closeable {
             }
         }
 
-        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT);
+        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT, "root");
 
         for (Map.Entry<String, List<NodeInfo>> e : dcToNI.entrySet()) {
             CrushNode child = root.getChildByName(e.getKey());
             if (child == null) {
-                CrushNode dcNode = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
+                CrushNode dcNode = new CrushNode(CrushHierarchyLevel.DATA_CENTER, e.getKey());
                 root.addChild(e.getKey(), dcNode);
                 child = root.getChildByName(e.getKey());
             }
             for (NodeInfo ni : e.getValue()) {
+                String nodeName = String.valueOf(ni.nodeId);
                 CrushNode node = new CrushNode(CrushHierarchyLevel.NODE, ni.nodeId);
-                child.addChild(String.valueOf(ni.nodeId), node);
+                child.addChild(nodeName, node);
             }
         }
 

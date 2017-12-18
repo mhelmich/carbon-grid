@@ -234,4 +234,61 @@ public class ConsulClientTest extends BaseTest {
             }
         }
     }
+
+    @Test
+    public void testApplyTreeToTree() {
+        CrushNode madeUp = createTree();
+        CrushNode applyToMe = new CrushNode(CrushHierarchyLevel.ROOT, "root");
+
+        ScheduledExecutorService es = Executors.newScheduledThreadPool(2);
+        try (ConsulClient client = new ConsulClient(mockConsulConfig(), es)) {
+            client.applyTreeToTree(applyToMe, madeUp);
+        }
+
+        assertEquals(2, applyToMe.getChildren().size());
+
+        applyToMe = new CrushNode(CrushHierarchyLevel.ROOT, "root");
+        CrushNode dc1 = new CrushNode(CrushHierarchyLevel.DATA_CENTER, "dc1");
+        CrushNode dc3 = new CrushNode(CrushHierarchyLevel.DATA_CENTER, "dc3");
+        applyToMe.addChild(dc1);
+        applyToMe.addChild(dc3);
+
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)500));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)501));
+        // this one is missing
+        //dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)502));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)503));
+        dc3.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)555));
+
+        try (ConsulClient client = new ConsulClient(mockConsulConfig(), es)) {
+            client.applyTreeToTree(applyToMe, madeUp);
+        }
+
+        assertEquals(3, applyToMe.getChildren().size());
+        assertNotNull(applyToMe.getChildByName("dc1"));
+        assertNotNull(applyToMe.getChildByName("dc2"));
+        assertNotNull(applyToMe.getChildByName("dc3"));
+        assertTrue(applyToMe.getChildByName("dc3").isDead());
+        assertNotNull(applyToMe.getChildByName("dc1").getChildByName("502"));
+        assertTrue(applyToMe.getChildByName("dc3").getChildByName("555").isDead());
+    }
+
+    private CrushNode createTree() {
+        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT, "root");
+        CrushNode dc1 = new CrushNode(CrushHierarchyLevel.DATA_CENTER, "dc1");
+        CrushNode dc2 = new CrushNode(CrushHierarchyLevel.DATA_CENTER, "dc2");
+        root.addChild(dc1);
+        root.addChild(dc2);
+
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)500));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)501));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)502));
+        dc1.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)503));
+
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)510));
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)511));
+        dc2.addChild(new CrushNode(CrushHierarchyLevel.NODE, (short)512));
+
+        return root;
+    }
 }

@@ -19,6 +19,7 @@ package org.carbon.grid.cluster;
 import org.junit.Test;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -40,9 +41,9 @@ public class CrushMapTest {
 
     @Test
     public void testDisabledNodes() {
-        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT);
-        CrushNode dc1 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
-        CrushNode dc2 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
+        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT, UUID.randomUUID().toString());
+        CrushNode dc1 = new CrushNode(CrushHierarchyLevel.DATA_CENTER, UUID.randomUUID().toString());
+        CrushNode dc2 = new CrushNode(CrushHierarchyLevel.DATA_CENTER, UUID.randomUUID().toString());
         root.addChild(dc1);
         root.addChild(dc2);
 
@@ -75,9 +76,9 @@ public class CrushMapTest {
 
     @Test
     public void testDoesntMatchPredicate() {
-        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT);
-        CrushNode dc1 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
-        CrushNode dc2 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
+        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT, UUID.randomUUID().toString());
+        CrushNode dc1 = new CrushNode(CrushHierarchyLevel.DATA_CENTER, UUID.randomUUID().toString());
+        CrushNode dc2 = new CrushNode(CrushHierarchyLevel.DATA_CENTER, UUID.randomUUID().toString());
         root.addChild(dc1);
         root.addChild(dc2);
 
@@ -114,9 +115,9 @@ public class CrushMapTest {
     }
 
     private CrushNode buildNodeTree() {
-        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT);
-        CrushNode dc1 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
-        CrushNode dc2 = new CrushNode(CrushHierarchyLevel.DATA_CENTER);
+        CrushNode root = new CrushNode(CrushHierarchyLevel.ROOT, "root");
+        CrushNode dc1 = new CrushNode(CrushHierarchyLevel.DATA_CENTER, UUID.randomUUID().toString());
+        CrushNode dc2 = new CrushNode(CrushHierarchyLevel.DATA_CENTER, UUID.randomUUID().toString());
         root.addChild(dc1);
         root.addChild(dc2);
 

@@ -18,11 +18,10 @@ package org.carbon.grid.cluster;
 
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
+import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
-import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * These nodes make up a decision tree.
@@ -36,9 +35,9 @@ import java.util.UUID;
  * - leaf: a leaf has an idea and represents a single node in the cluster
  */
 class CrushNode {
-    private final HashMap<String, Integer> nameToChild;
+    private final NonBlockingHashMap<String, Integer> nameToChild;
     // only buckets will have children
-    private final LinkedList<CrushNode> children;
+    private final CopyOnWriteArrayList<CrushNode> children;
     // statically seeded hash function
     // this hash function needs to produce consistent hashes
     private final HashFunction f = Hashing.murmur3_32(2147483647);
@@ -46,23 +45,26 @@ class CrushNode {
     private final CrushHierarchyLevel type;
     // only for leaf nodes
     private final Short nodeId;
+    private final String nodeName;
 
     // the state of a node
     private boolean isDead = false;
     private boolean isFull = false;
 
-    CrushNode(CrushHierarchyLevel type) {
+    CrushNode(CrushHierarchyLevel type, String nodeName) {
         this.type = type;
+        this.nodeName = nodeName;
         this.nodeId = null;
-        this.children = new LinkedList<>();
-        this.nameToChild = new HashMap<>();
+        this.nameToChild = new NonBlockingHashMap<>();
+        this.children = new CopyOnWriteArrayList<>();
     }
 
     CrushNode(CrushHierarchyLevel type, Short nodeId) {
         this.type = type;
         this.nodeId = nodeId;
-        this.children = null;
+        this.nodeName = String.valueOf(nodeId);
         this.nameToChild = null;
+        this.children = null;
     }
 
     boolean isAvailable() {
@@ -70,7 +72,7 @@ class CrushNode {
     }
 
     void addChild(CrushNode b) {
-        addChild(UUID.randomUUID().toString(), b);
+        addChild(b.getNodeName(), b);
     }
 
     void addChild(String name, CrushNode b) {
@@ -108,6 +110,14 @@ class CrushNode {
         return children.get(hash);
     }
 
+    boolean isFull() {
+        return isFull;
+    }
+
+    boolean isDead() {
+        return isDead;
+    }
+
     void setFull(boolean full) {
         this.isFull = full;
     }
@@ -130,8 +140,12 @@ class CrushNode {
         return nodeId;
     }
 
+    String getNodeName() {
+        return nodeName;
+    }
+
     @Override
     public String toString() {
-        return "nodeId: " + nodeId + " children: " + children;
+        return "nodeId: " + nodeId + " nodeName: " + nodeName + " children: " + children;
     }
 }
