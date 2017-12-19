@@ -1,6 +1,6 @@
 # CarbonGrid Cluster Module
 
-This page explains the inner workings of the CarbonGrid cluster module. Specifically it details how a cluster is established, how failover works, etc.
+This page explains the inner workings of the CarbonGrid Cluster Module. It specifically details how a cluster is established, how failover works, etc.
 
 TOC:
 * explain the general carbon grid trade offs
@@ -43,6 +43,7 @@ Every node in the cluster has the ability to connect to all other nodes in the c
 
 ### Liveness of a Node
 A node can have various states and a lot of information can be associated with a node. The most important one though is its liveness. Liveness refers to whether a node is available (up) or whether it is not available (failed, down, crashed, etc.). The most part of CarbonGrid clustering code is there to establish a global view on which nodes are available, which roles available nodes have, and how these available nodes can be reached.
+The liveness concept bases on consul sessions. All values that nodes create in consul are tied to consul sessions. Clients are configured in a way that values are being deleted if the session times out. Failure to touch (update) the session for an extended period of time will expire the session and with it delete all values the node has created. A node is determined dead if its session expires and its NodeInfo disappeared.
 
 ### Roles of a Node
 
@@ -52,13 +53,13 @@ The cluster consists of leader and follower nodes. Regardless of the sharing sta
 The node id is a cluster-wide unique id that a node acquires at startup and retains for its entire life. Node ids are given out in a consecutive, monotonically increasing block. Newer ids are greater than older ones. However nodes that join a cluster will try to fill gaps between the node ids that have been given out. As an example: There are three nodes in our cluster - node ids 100, 101, and 102. If the node with the id 101 were to fail, there is a gap in the consecutive block of node ids. The next node to join will try to fill this gap and acquire the id 101. That means the moment a node leaves the cluster its old node id becomes available to the next node to join. 
 
 ### NodeInfo 
-This contains all the information that a node publishes about itself in consul.
-The node info contains this nodes id, information about its physical location (in terms of data centers, racks, machines, etc.), the ids of all its leader nodes, and the ids of all its follower nodes.
+This contains all the information that a node publishes about itself in consul. The node info contains this nodes id, information about its physical location (in terms of data centers, racks, machines, etc.), the ids of all its leader nodes, and the ids of all its follower nodes.
 
 ### Listening for Changes in the Cluster
 
-Each node listens for changes in the liveness of other nodes in the cluster.
+Each node listens for changes in the NodeInfo or liveness of other nodes.
+All nodes listen on every other nodes NodeInfo object. When this NodeInfo object changes, a callback runs inside every other node, in order to react to the changed cluster landscape. All failover mechanisms are triggered by these callbacks.
 
 ## The Lifecycle of a Node
 
-A node starts up and creates a session with consul (this session is used to determine liveness). The each node then has the possibility to react on changes in the cluster (e.g. start a leader election, leader promotion, etc.).
+A node starts up and creates a session with consul (this session is used to determine liveness). Each node then has the possibility to react on changes in the cluster (e.g. start a leader election, leader promotion, etc.). With all its metadata in place, CarbonGrid nodes are leader and follower at the same time. There are no partitions and the highest level data grouping is a cache line. Ownership happens on basis of cache lines and therefore nodes start up and have no ownership of any cache lines but they are part of the cluster. As they received (or make) requests they become owners of cache lines. This scheme has the advantage of not needing constantly rebalance workload by mapping partitions back and forth.
