@@ -159,7 +159,7 @@ class CrushNode {
             // adding rPrime after hashing gives us a nice failover behavior
             // where in case nodes are unavailable, we just hop over one more step
             // to the next node
-            hash += rPrime;
+            hash += rPrime * 2147483647;
             hash = (hash % children.size());
             return children.get(hash);
         }
