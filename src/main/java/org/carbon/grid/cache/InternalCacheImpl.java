@@ -16,6 +16,7 @@
 
 package org.carbon.grid.cache;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.inject.Singleton;
@@ -592,7 +593,7 @@ class InternalCacheImpl implements InternalCache {
         }
     }
 
-    // visible for testing
+    @VisibleForTesting
     CacheLine innerGetLineLocally(long lineId) {
         CacheLine line = owned.get(lineId);
         if (line == null) {
