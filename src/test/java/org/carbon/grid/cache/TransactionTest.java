@@ -170,7 +170,7 @@ public class TransactionTest extends BaseTest {
         return () -> supplier;
     }
 
-    private Backup mockBackup() {
-        return Mockito.mock(Backup.class);
+    private Replication mockBackup() {
+        return Mockito.mock(Replication.class);
     }
 }

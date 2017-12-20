@@ -77,7 +77,7 @@ class InternalCacheImpl implements InternalCache {
     private final CarbonGrid.CacheConfig cacheConfig;
     private final Provider<GloballyUniqueIdAllocator> idAllocatorProvider;
     private final Provider<ReplicaIdSupplier> replicaIdSupplierProvider;
-    private final Backup backupModule;
+    private final Replication replicationModule;
 
     // this field establishes a local node state with regards to backups
     // replica nodes will only back up cache lines that come with a
@@ -87,13 +87,20 @@ class InternalCacheImpl implements InternalCache {
     private long localLeaderEpoch = Long.MIN_VALUE;
 
     @Inject
-    InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.CacheConfig cacheConfig, CarbonGrid.ServerConfig serverConfig, Provider<GloballyUniqueIdAllocator> idAllocatorProvider, Provider<ReplicaIdSupplier> replicaIdSupplierProvider, Backup backupModule) {
+    InternalCacheImpl(
+            @MyNodeId Provider<Short> myNodeIdProvider,
+            CarbonGrid.CacheConfig cacheConfig,
+            CarbonGrid.ServerConfig serverConfig,
+            Provider<GloballyUniqueIdAllocator> idAllocatorProvider,
+            Provider<ReplicaIdSupplier> replicaIdSupplierProvider,
+            Replication replicationModule
+    ) {
         this.myNodeIdProvider = myNodeIdProvider;
         this.serverConfig = serverConfig;
         this.cacheConfig = cacheConfig;
         this.idAllocatorProvider = idAllocatorProvider;
         this.replicaIdSupplierProvider = replicaIdSupplierProvider;
-        this.backupModule = backupModule;
+        this.replicationModule = replicationModule;
         this.comms = new GridCommunications(myNodeIdProvider, serverConfig, this);
     }
 
@@ -404,7 +411,7 @@ class InternalCacheImpl implements InternalCache {
 
     private Message.Response handleBACKUP(Message.BACKUP backup) {
         CacheLine lineToBackUp = new CacheLine(backup.lineId, backup.version, backup.sender, CacheLineState.INVALID, backup.buffer);
-        backupModule.backUp(backup.sender, backup.leaderEpoch, lineToBackUp);
+        replicationModule.backUp(backup.sender, backup.leaderEpoch, lineToBackUp);
         return new Message.BACKUP_ACK(backup.messageSequenceNumber, myNodeId(), backup.lineId, backup.leaderEpoch);
     }
 
@@ -412,7 +419,7 @@ class InternalCacheImpl implements InternalCache {
     }
 
     private Message.Response handleREMOVE_BACKUP(Message.REMOVE_BACKUP removeBackup) {
-        backupModule.stopBackupFor(removeBackup.sender);
+        replicationModule.stopBackupFor(removeBackup.sender);
         return new Message.BACKUP_ACK(removeBackup.messageSequenceNumber, myNodeId(), removeBackup.lineId, Long.MIN_VALUE);
     }
 

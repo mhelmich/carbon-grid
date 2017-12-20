@@ -64,8 +64,8 @@ public class BaseTest {
         return cc;
     }
 
-    protected CarbonGrid.BackupConfig mockBackupConfig() {
-        CarbonGrid.BackupConfig bc = Mockito.mock(CarbonGrid.BackupConfig.class);
+    protected CarbonGrid.ReplicationConfig mockBackupConfig() {
+        CarbonGrid.ReplicationConfig bc = Mockito.mock(CarbonGrid.ReplicationConfig.class);
         when(bc.replicationFactor()).thenReturn(3);
         return bc;
     }

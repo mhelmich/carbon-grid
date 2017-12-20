@@ -19,7 +19,7 @@ package org.carbon.grid.cache;
 import javax.annotation.Nullable;
 import java.util.Map;
 
-public interface Backup {
+public interface Replication {
 
     void backUp(short leaderId, long leaderEpoch, CacheLine line);
 

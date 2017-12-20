@@ -26,13 +26,13 @@ import java.util.Collections;
 import java.util.Map;
 
 @Singleton
-class BackupImpl implements Backup {
+class ReplicationImpl implements Replication {
     private final NonBlockingHashMapLong<BackupLeaderHolder> backupHolders = new NonBlockingHashMapLong<>();
-    private final CarbonGrid.BackupConfig backupConfig;
+    private final CarbonGrid.ReplicationConfig replicationConfig;
 
     @Inject
-    BackupImpl(CarbonGrid.BackupConfig backupConfig) {
-        this.backupConfig = backupConfig;
+    ReplicationImpl(CarbonGrid.ReplicationConfig replicationConfig) {
+        this.replicationConfig = replicationConfig;
     }
 
     @Override

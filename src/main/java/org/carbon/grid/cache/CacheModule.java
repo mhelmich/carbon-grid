@@ -24,6 +24,6 @@ public class CacheModule extends AbstractModule {
     protected void configure() {
         bind(InternalCache.class).to(InternalCacheImpl.class).in(Singleton.class);
         bind(PeerChangeConsumer.class).to(PeerChangeConsumerImpl.class).in(Singleton.class);
-        bind(Backup.class).to(BackupImpl.class).in(Singleton.class);
+        bind(Replication.class).to(ReplicationImpl.class).in(Singleton.class);
     }
 }

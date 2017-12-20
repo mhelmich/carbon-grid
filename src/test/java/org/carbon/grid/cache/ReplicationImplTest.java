@@ -23,36 +23,36 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 
-public class BackupImplTest extends BaseTest {
+public class ReplicationImplTest extends BaseTest {
     private final short leaderNodeId = 555;
 
     @Test
     public void testBasic() {
-        Backup backup = new BackupImpl(mockBackupConfig());
+        Replication replication = new ReplicationImpl(mockBackupConfig());
         CacheLine line = newRandomCacheLine();
         Long leaderEpoch = 123L;
-        backup.backUp(leaderNodeId, leaderEpoch, line);
-        assertEquals(leaderEpoch, backup.getLeaderEpochFor(leaderNodeId));
-        assertEquals(1, backup.getCacheLinesForLeader(leaderNodeId).size());
-        assertEquals(line.getVersion(), backup.getCacheLinesForLeader(leaderNodeId).get(line.getId()).getVersion());
+        replication.backUp(leaderNodeId, leaderEpoch, line);
+        assertEquals(leaderEpoch, replication.getLeaderEpochFor(leaderNodeId));
+        assertEquals(1, replication.getCacheLinesForLeader(leaderNodeId).size());
+        assertEquals(line.getVersion(), replication.getCacheLinesForLeader(leaderNodeId).get(line.getId()).getVersion());
 
         // shouldn't update because of lower epoch
         CacheLine line2 = newRandomCacheLine(line.getId());
         line2.setVersion(line.getVersion() - 10);
-        backup.backUp(leaderNodeId, leaderEpoch - 7, line2);
-        assertEquals(leaderEpoch, backup.getLeaderEpochFor(leaderNodeId));
-        assertEquals(1, backup.getCacheLinesForLeader(leaderNodeId).size());
-        assertEquals(line.getVersion(), backup.getCacheLinesForLeader(leaderNodeId).get(line.getId()).getVersion());
+        replication.backUp(leaderNodeId, leaderEpoch - 7, line2);
+        assertEquals(leaderEpoch, replication.getLeaderEpochFor(leaderNodeId));
+        assertEquals(1, replication.getCacheLinesForLeader(leaderNodeId).size());
+        assertEquals(line.getVersion(), replication.getCacheLinesForLeader(leaderNodeId).get(line.getId()).getVersion());
         assertEquals(Unpooled.EMPTY_BUFFER, line2.resetReaderAndGetReadOnlyData());
 
         // shouldn't update because of lower version
         CacheLine line3 = newRandomCacheLine(line.getId());
         line3.setVersion(line.getVersion() - 10);
         Long newLeaderEpoch = leaderEpoch + 7;
-        backup.backUp(leaderNodeId, newLeaderEpoch, line3);
-        assertEquals(newLeaderEpoch, backup.getLeaderEpochFor(leaderNodeId));
-        assertEquals(1, backup.getCacheLinesForLeader(leaderNodeId).size());
-        assertEquals(line.getVersion(), backup.getCacheLinesForLeader(leaderNodeId).get(line.getId()).getVersion());
+        replication.backUp(leaderNodeId, newLeaderEpoch, line3);
+        assertEquals(newLeaderEpoch, replication.getLeaderEpochFor(leaderNodeId));
+        assertEquals(1, replication.getCacheLinesForLeader(leaderNodeId).size());
+        assertEquals(line.getVersion(), replication.getCacheLinesForLeader(leaderNodeId).get(line.getId()).getVersion());
         assertEquals(Unpooled.EMPTY_BUFFER, line3.resetReaderAndGetReadOnlyData());
 
         // updates!!!
@@ -60,16 +60,16 @@ public class BackupImplTest extends BaseTest {
         int newVersion = line.getVersion() + 10;
         line4.setVersion(newVersion);
         newLeaderEpoch++;
-        backup.backUp(leaderNodeId, newLeaderEpoch, line4);
-        assertEquals(newLeaderEpoch, backup.getLeaderEpochFor(leaderNodeId));
-        assertEquals(1, backup.getCacheLinesForLeader(leaderNodeId).size());
-        assertEquals(newVersion, backup.getCacheLinesForLeader(leaderNodeId).get(line.getId()).getVersion());
+        replication.backUp(leaderNodeId, newLeaderEpoch, line4);
+        assertEquals(newLeaderEpoch, replication.getLeaderEpochFor(leaderNodeId));
+        assertEquals(1, replication.getCacheLinesForLeader(leaderNodeId).size());
+        assertEquals(newVersion, replication.getCacheLinesForLeader(leaderNodeId).get(line.getId()).getVersion());
         assertEquals(1, line4.resetReaderAndGetReadOnlyData().refCnt());
         // old buffer has been released
         assertEquals(Unpooled.EMPTY_BUFFER, line.resetReaderAndGetReadOnlyData());
 
-        backup.stopBackupFor(leaderNodeId);
-        assertEquals(0, backup.getCacheLinesForLeader(leaderNodeId).size());
+        replication.stopBackupFor(leaderNodeId);
+        assertEquals(0, replication.getCacheLinesForLeader(leaderNodeId).size());
     }
 
     private CacheLine newRandomCacheLine(long id) {
