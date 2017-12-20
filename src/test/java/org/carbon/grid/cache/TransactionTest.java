@@ -22,6 +22,7 @@ import io.netty.buffer.Unpooled;
 import org.carbon.grid.BaseTest;
 import org.carbon.grid.CarbonGrid;
 import org.carbon.grid.cluster.GloballyUniqueIdAllocator;
+import org.carbon.grid.cluster.ReplicaIdSupplier;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -92,7 +93,7 @@ public class TransactionTest extends BaseTest {
     public void testProcessMessagesAfterLock() throws IOException, NoSuchFieldException, IllegalAccessException, InterruptedException {
         ByteBuf bufferToOverrideWith = newRandomBuffer();
         CountDownLatch finishedHandleMessage = new CountDownLatch(1);
-        try (InternalCacheImpl cache = new InternalCacheImpl(mockNodeIdProvider((short)123), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(22344), mockIdAllocatorProvider()) {
+        try (InternalCacheImpl cache = new InternalCacheImpl(mockNodeIdProvider((short)123), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(22344), mockIdAllocatorProvider(), mockReplicaIdProvider()) {
             @Override
             public void handleResponse(Message.Response response) {
                 super.handleResponse(response);
@@ -150,7 +151,7 @@ public class TransactionTest extends BaseTest {
     }
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
-        return new InternalCacheImpl(mockNodeIdProvider(nodeId), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(port), mockIdAllocatorProvider());
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(port), mockIdAllocatorProvider(), mockReplicaIdProvider());
     }
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {
@@ -159,5 +160,9 @@ public class TransactionTest extends BaseTest {
 
     private Provider<GloballyUniqueIdAllocator> mockIdAllocatorProvider() {
         return () -> idAllocator::incrementAndGet;
+    }
+
+    private Provider<ReplicaIdSupplier> mockReplicaIdProvider() {
+        return () -> Mockito.mock(ReplicaIdSupplier.class);
     }
 }

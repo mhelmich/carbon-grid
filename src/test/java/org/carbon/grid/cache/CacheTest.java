@@ -22,7 +22,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.util.internal.SocketUtils;
 import org.carbon.grid.BaseTest;
 import org.carbon.grid.cluster.GloballyUniqueIdAllocator;
+import org.carbon.grid.cluster.ReplicaIdSupplier;
 import org.junit.Test;
+import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -413,7 +415,7 @@ public class CacheTest extends BaseTest {
     }
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
-        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockCacheConfig(), mockServerConfig(port), mockIdAllocatorProvider());
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockCacheConfig(), mockServerConfig(port), mockIdAllocatorProvider(), mockReplicaIdProvider());
     }
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {
@@ -422,5 +424,9 @@ public class CacheTest extends BaseTest {
 
     private Provider<GloballyUniqueIdAllocator> mockIdAllocatorProvider() {
         return () -> idAllocator::incrementAndGet;
+    }
+
+    private Provider<ReplicaIdSupplier> mockReplicaIdProvider() {
+        return () -> Mockito.mock(ReplicaIdSupplier.class);
     }
 }

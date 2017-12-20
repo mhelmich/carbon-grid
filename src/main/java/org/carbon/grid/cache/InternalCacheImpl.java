@@ -25,6 +25,7 @@ import io.netty.buffer.PooledByteBufAllocator;
 import org.carbon.grid.CarbonGrid;
 import org.carbon.grid.cluster.GloballyUniqueIdAllocator;
 import org.carbon.grid.cluster.MyNodeId;
+import org.carbon.grid.cluster.ReplicaIdSupplier;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,13 +75,15 @@ class InternalCacheImpl implements InternalCache {
     private final CarbonGrid.ServerConfig serverConfig;
     private final CarbonGrid.CacheConfig cacheConfig;
     private final Provider<GloballyUniqueIdAllocator> idAllocatorProvider;
+    private final Provider<ReplicaIdSupplier> replicaIdSupplierProvider;
 
     @Inject
-    InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.CacheConfig cacheConfig, CarbonGrid.ServerConfig serverConfig, Provider<GloballyUniqueIdAllocator> idAllocatorProvider) {
+    InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.CacheConfig cacheConfig, CarbonGrid.ServerConfig serverConfig, Provider<GloballyUniqueIdAllocator> idAllocatorProvider, Provider<ReplicaIdSupplier> replicaIdSupplierProvider) {
         this.myNodeIdProvider = myNodeIdProvider;
         this.serverConfig = serverConfig;
         this.cacheConfig = cacheConfig;
         this.idAllocatorProvider = idAllocatorProvider;
+        this.replicaIdSupplierProvider = replicaIdSupplierProvider;
         this.comms = new GridCommunications(myNodeIdProvider, serverConfig, this);
     }
 
