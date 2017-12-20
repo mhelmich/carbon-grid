@@ -16,12 +16,14 @@
 
 package org.carbon.grid.cache;
 
+import com.google.inject.Singleton;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 
 import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.Map;
 
+@Singleton
 class BackupImpl implements Backup {
     private final NonBlockingHashMapLong<BackupLeaderHolder> backupHolders = new NonBlockingHashMapLong<>();
 
