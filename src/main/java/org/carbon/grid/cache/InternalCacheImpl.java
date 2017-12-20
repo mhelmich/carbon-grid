@@ -331,7 +331,7 @@ class InternalCacheImpl implements InternalCache {
             shared.remove(putx.lineId);
         }
 
-        backupCacheLine(putx.lineId);
+        replicateCacheLine(putx.lineId);
     }
 
     private void handlePUT(Message.PUT put) {
@@ -349,7 +349,7 @@ class InternalCacheImpl implements InternalCache {
             line.setData(put.data);
         }
 
-        backupCacheLine(put.lineId);
+        replicateCacheLine(line);
     }
 
     private Message.Response handleINV(Message.INV inv) {
@@ -671,13 +671,18 @@ class InternalCacheImpl implements InternalCache {
     // this is called from a transaction or a put* handler
     // in both cases this nodes acquires ownership of new cache lines
     // and those need to be backed up
-    void backupCacheLine(long lineId) {
+
+    void replicateCacheLine(long lineId) {
         CacheLine line = owned.get(lineId);
+        replicateCacheLine(line);
+    }
+
+    void replicateCacheLine(CacheLine line) {
         if (line != null) {
             localLeaderEpoch++;
             Message backupMsg = new Message.BACKUP(
                     myNodeId(),
-                    lineId,
+                    line.getId(),
                     localLeaderEpoch,
                     localLeaderEpoch,
                     line.getVersion(),

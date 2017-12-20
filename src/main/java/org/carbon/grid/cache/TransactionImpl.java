@@ -89,7 +89,7 @@ class TransactionImpl implements Transaction {
 
             // invoke backup for all committed cache lines
             for (Long lineId : undoInfo.keySet()) {
-                cache.backupCacheLine(lineId);
+                cache.replicateCacheLine(lineId);
             }
         } finally {
             // release all lines
