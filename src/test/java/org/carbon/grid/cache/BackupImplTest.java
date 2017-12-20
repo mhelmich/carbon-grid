@@ -28,7 +28,7 @@ public class BackupImplTest extends BaseTest {
 
     @Test
     public void testBasic() {
-        Backup backup = new BackupImpl();
+        Backup backup = new BackupImpl(mockBackupConfig());
         CacheLine line = newRandomCacheLine();
         Long leaderEpoch = 123L;
         backup.backUp(leaderNodeId, leaderEpoch, line);

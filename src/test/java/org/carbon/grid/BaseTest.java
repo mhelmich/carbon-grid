@@ -64,6 +64,12 @@ public class BaseTest {
         return cc;
     }
 
+    protected CarbonGrid.BackupConfig mockBackupConfig() {
+        CarbonGrid.BackupConfig bc = Mockito.mock(CarbonGrid.BackupConfig.class);
+        when(bc.replicationFactor()).thenReturn(3);
+        return bc;
+    }
+
     protected ByteBuf newRandomBuffer() {
         byte[] bites = new byte[1024];
         random.nextBytes(bites);

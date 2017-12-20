@@ -385,15 +385,15 @@ public class CacheTest extends BaseTest {
         when(supplier2.get()).thenReturn(ImmutableList.of(node1, node3));
         ReplicaIdSupplier supplier3 = Mockito.mock(ReplicaIdSupplier.class);
         when(supplier3.get()).thenReturn(ImmutableList.of(node1, node2));
-        Backup backup1 = new BackupImpl();
-        Backup backup2 = new BackupImpl() {
+        Backup backup1 = new BackupImpl(mockBackupConfig());
+        Backup backup2 = new BackupImpl(mockBackupConfig()) {
             @Override
             public void backUp(short leaderId, long leaderEpoch, CacheLine line) {
                 super.backUp(leaderId, leaderEpoch, line);
                 backupCalledForAllBackups.countDown();
             }
         };
-        Backup backup3 = new BackupImpl() {
+        Backup backup3 = new BackupImpl(mockBackupConfig()) {
             @Override
             public void backUp(short leaderId, long leaderEpoch, CacheLine line) {
                 super.backUp(leaderId, leaderEpoch, line);

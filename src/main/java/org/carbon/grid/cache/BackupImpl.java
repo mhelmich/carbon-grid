@@ -16,7 +16,9 @@
 
 package org.carbon.grid.cache;
 
+import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import org.carbon.grid.CarbonGrid;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 
 import javax.annotation.Nullable;
@@ -26,6 +28,12 @@ import java.util.Map;
 @Singleton
 class BackupImpl implements Backup {
     private final NonBlockingHashMapLong<BackupLeaderHolder> backupHolders = new NonBlockingHashMapLong<>();
+    private final CarbonGrid.BackupConfig backupConfig;
+
+    @Inject
+    BackupImpl(CarbonGrid.BackupConfig backupConfig) {
+        this.backupConfig = backupConfig;
+    }
 
     @Override
     public void backUp(short leaderId, long leaderEpoch, CacheLine line) {
