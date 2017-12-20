@@ -671,7 +671,6 @@ class InternalCacheImpl implements InternalCache {
     // this is called from a transaction or a put* handler
     // in both cases this nodes acquires ownership of new cache lines
     // and those need to be backed up
-
     void replicateCacheLine(long lineId) {
         CacheLine line = owned.get(lineId);
         replicateCacheLine(line);
