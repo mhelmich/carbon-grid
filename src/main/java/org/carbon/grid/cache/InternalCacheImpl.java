@@ -415,8 +415,7 @@ class InternalCacheImpl implements InternalCache {
         return new Message.BACKUP_ACK(backup.messageSequenceNumber, myNodeId(), backup.lineId, backup.leaderEpoch);
     }
 
-    private void handleBACKUP_ACK(Message.BACKUP_ACK backupAck) {
-    }
+    private void handleBACKUP_ACK(Message.BACKUP_ACK backupAck) { }
 
     private Message.Response handleREMOVE_BACKUP(Message.REMOVE_BACKUP removeBackup) {
         replicationModule.stopBackupFor(removeBackup.sender);
