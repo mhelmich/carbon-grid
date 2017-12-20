@@ -415,7 +415,7 @@ public class CacheTest extends BaseTest {
     }
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
-        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockCacheConfig(), mockServerConfig(port), mockIdAllocatorProvider(), mockReplicaIdProvider());
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockCacheConfig(), mockServerConfig(port), mockIdAllocatorProvider(), mockReplicaIdProvider(), mockBackup());
     }
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {
@@ -428,5 +428,9 @@ public class CacheTest extends BaseTest {
 
     private Provider<ReplicaIdSupplier> mockReplicaIdProvider() {
         return () -> Mockito.mock(ReplicaIdSupplier.class);
+    }
+
+    private Backup mockBackup() {
+        return Mockito.mock(Backup.class);
     }
 }

@@ -93,7 +93,7 @@ public class TransactionTest extends BaseTest {
     public void testProcessMessagesAfterLock() throws IOException, NoSuchFieldException, IllegalAccessException, InterruptedException {
         ByteBuf bufferToOverrideWith = newRandomBuffer();
         CountDownLatch finishedHandleMessage = new CountDownLatch(1);
-        try (InternalCacheImpl cache = new InternalCacheImpl(mockNodeIdProvider((short)123), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(22344), mockIdAllocatorProvider(), mockReplicaIdProvider()) {
+        try (InternalCacheImpl cache = new InternalCacheImpl(mockNodeIdProvider((short)123), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(22344), mockIdAllocatorProvider(), mockReplicaIdProvider(), mockBackup()) {
             @Override
             public void handleResponse(Message.Response response) {
                 super.handleResponse(response);
@@ -151,7 +151,7 @@ public class TransactionTest extends BaseTest {
     }
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
-        return new InternalCacheImpl(mockNodeIdProvider(nodeId), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(port), mockIdAllocatorProvider(), mockReplicaIdProvider());
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), Mockito.mock(CarbonGrid.CacheConfig.class), mockServerConfig(port), mockIdAllocatorProvider(), mockReplicaIdProvider(), mockBackup());
     }
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {
@@ -164,5 +164,9 @@ public class TransactionTest extends BaseTest {
 
     private Provider<ReplicaIdSupplier> mockReplicaIdProvider() {
         return () -> Mockito.mock(ReplicaIdSupplier.class);
+    }
+
+    private Backup mockBackup() {
+        return Mockito.mock(Backup.class);
     }
 }
