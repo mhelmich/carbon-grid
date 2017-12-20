@@ -156,5 +156,6 @@ public final class CarbonGrid implements Closeable {
 
     public interface ReplicationConfig {
         Integer replicationFactor();
+        Boolean syncReplication();
     }
 }

@@ -28,3 +28,8 @@ replication:
     # the higher the number, the better the cache is guarded against
     # node failures and the slower updates work
     replicationFactor: 3
+    # indicates whether the API call should return before all replica nodes
+    # received the change or not
+    # syncReplication -> true means the API will wait until all replica nodes
+    # have acknowledged the change in question
+    syncReplication: false
