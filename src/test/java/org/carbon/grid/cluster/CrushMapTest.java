@@ -71,7 +71,7 @@ public class CrushMapTest {
         nodeIds = crt.placeCacheLine(111L, root);
         assertEquals(2, nodeIds.size());
         assertTrue(nodeIds.indexOf((short)510) >= 0);
-        assertTrue(nodeIds.indexOf((short)502) >= 0);
+        assertTrue(nodeIds.indexOf((short)500) >= 0);
     }
 
     @Test

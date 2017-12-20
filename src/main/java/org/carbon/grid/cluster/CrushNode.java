@@ -160,6 +160,7 @@ class CrushNode {
             // where in case nodes are unavailable, we just hop over one more step
             // to the next node
             hash += rPrime * 2147483647;
+            hash = Math.abs(hash);
             hash = (hash % children.size());
             return children.get(hash);
         }
