@@ -16,6 +16,7 @@
 
 package org.carbon.grid.cache;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Provider;
 import io.netty.buffer.ByteBuf;
@@ -29,8 +30,10 @@ import org.mockito.Mockito;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.Assert.assertEquals;
@@ -86,6 +89,8 @@ public class CacheTest extends BaseTest {
             releaseByteBuf(localBB, remoteBB);
             closeThreeCaches(threeCaches);
         }
+        assertEquals(0, localBB.refCnt());
+        assertEquals(0, remoteBB.refCnt());
     }
 
     @Test
@@ -115,6 +120,10 @@ public class CacheTest extends BaseTest {
         } finally {
             releaseByteBuf(buffer);
         }
+
+        // this is the static EMPTY_BUFFER
+        // that guy always has a reference count of one
+        assertEquals(1, buffer.refCnt());
     }
 
     @Test
@@ -177,6 +186,10 @@ public class CacheTest extends BaseTest {
             releaseByteBuf(localBB, localBB2, remoteBB);
             closeThreeCaches(threeCaches);
         }
+
+        assertEquals(0, localBB.refCnt());
+        assertEquals(0, localBB2.refCnt());
+        assertEquals(0, remoteBB.refCnt());
     }
 
     @Test
@@ -248,6 +261,11 @@ public class CacheTest extends BaseTest {
             releaseByteBuf(localBB, localBB2, localBB3, remoteBB);
             closeThreeCaches(threeCaches);
         }
+
+        assertEquals(0, localBB.refCnt());
+        assertEquals(0, localBB2.refCnt());
+        assertEquals(0, localBB3.refCnt());
+        assertEquals(0, remoteBB.refCnt());
     }
 
     @Test
@@ -306,6 +324,9 @@ public class CacheTest extends BaseTest {
             releaseByteBuf(buffer123, buffer456);
             closeThreeCaches(threeCaches);
         }
+
+        assertEquals(0, buffer123.refCnt());
+        assertEquals(0, buffer456.refCnt());
     }
 
     @Test
@@ -332,14 +353,107 @@ public class CacheTest extends BaseTest {
         Transaction txn = threeCaches.cache123.newTransaction();
         try {
             threeCaches.cache123.put(lineId, buffer, txn);
-            assertNotNull(threeCaches.cache123.innerGetLineLocally(lineId));
+            CacheLine localLine = threeCaches.cache123.innerGetLineLocally(lineId);
+            assertNotNull(localLine);
+            assertEquals(CacheLineState.EXCLUSIVE, localLine.getState());
             txn.commit();
             putBuffer = threeCaches.cache123.get(lineId);
             assertEquals(buffer, putBuffer);
         } finally {
             releaseByteBuf(buffer, putBuffer);
             closeThreeCaches(threeCaches);
+            assertEquals(0, buffer.refCnt());
         }
+    }
+
+    @Test
+    public void testBackup() throws IOException, InterruptedException {
+        //////////////////////////////////
+        /////////////////////////////
+        // set up three caches
+        CountDownLatch backupCalledForAllBackups = new CountDownLatch(2);
+
+        short node1 = 123;
+        short node2 = 456;
+        short node3 = 789;
+        int port1 = 4444;
+        int port2 = 5555;
+        int port3 = 6666;
+        ReplicaIdSupplier supplier1 = Mockito.mock(ReplicaIdSupplier.class);
+        when(supplier1.get()).thenReturn(ImmutableList.of(node2, node3));
+        ReplicaIdSupplier supplier2 = Mockito.mock(ReplicaIdSupplier.class);
+        when(supplier2.get()).thenReturn(ImmutableList.of(node1, node3));
+        ReplicaIdSupplier supplier3 = Mockito.mock(ReplicaIdSupplier.class);
+        when(supplier3.get()).thenReturn(ImmutableList.of(node1, node2));
+        Backup backup1 = new BackupImpl();
+        Backup backup2 = new BackupImpl() {
+            @Override
+            public void backUp(short leaderId, long leaderEpoch, CacheLine line) {
+                super.backUp(leaderId, leaderEpoch, line);
+                backupCalledForAllBackups.countDown();
+            }
+        };
+        Backup backup3 = new BackupImpl() {
+            @Override
+            public void backUp(short leaderId, long leaderEpoch, CacheLine line) {
+                super.backUp(leaderId, leaderEpoch, line);
+                backupCalledForAllBackups.countDown();
+            }
+        };
+        InternalCacheImpl internalCache1 = mockCache(node1, port1, () -> supplier1, backup1);
+        InternalCacheImpl internalCache2 = mockCache(node2, port2, () -> supplier2, backup2);
+        InternalCacheImpl internalCache3 = mockCache(node3, port3, () -> supplier3, backup3);
+
+        internalCache1.handlePeerChange(ImmutableMap.of(
+                node2, SocketUtils.socketAddress("localhost", port2),
+                node3, SocketUtils.socketAddress("localhost", port3)
+        ));
+        internalCache2.handlePeerChange(ImmutableMap.of(
+                node1, SocketUtils.socketAddress("localhost", port1),
+                node3, SocketUtils.socketAddress("localhost", port3)
+        ));
+        internalCache3.handlePeerChange(ImmutableMap.of(
+                node1, SocketUtils.socketAddress("localhost", port1),
+                node2, SocketUtils.socketAddress("localhost", port2)
+        ));
+
+        long lineId = 1234567890;
+        ByteBuf buffer = newRandomBuffer();
+
+        try {
+            //////////////////////////////////
+            /////////////////////////////
+            // run the actual test
+            Transaction txn = internalCache1.newTransaction();
+            internalCache1.put(lineId, buffer, txn);
+            CacheLine localLine = internalCache1.innerGetLineLocally(lineId);
+            assertNotNull(localLine);
+            assertEquals(CacheLineState.EXCLUSIVE, localLine.getState());
+            txn.commit();
+
+            assertTrue(backupCalledForAllBackups.await(TIMEOUT_SECS, TimeUnit.SECONDS));
+            assertEquals(1, backup2.getCacheLinesForLeader(node1).size());
+            assertEquals(1, backup3.getCacheLinesForLeader(node1).size());
+            assertTrue(backup2.getCacheLinesForLeader(node1).containsKey(lineId));
+            assertTrue(backup3.getCacheLinesForLeader(node1).containsKey(lineId));
+            assertEquals(localLine.getVersion(), backup2.getCacheLinesForLeader(node1).get(lineId).getVersion());
+            assertEquals(localLine.getVersion(), backup3.getCacheLinesForLeader(node1).get(lineId).getVersion());
+            assertEqualsByteBuf(localLine.resetReaderAndGetReadOnlyData(), backup2.getCacheLinesForLeader(node1).get(lineId).resetReaderAndGetReadOnlyData());
+            assertEqualsByteBuf(localLine.resetReaderAndGetReadOnlyData(), backup3.getCacheLinesForLeader(node1).get(lineId).resetReaderAndGetReadOnlyData());
+        } finally {
+            releaseByteBuf(buffer);
+            try {
+                internalCache1.close();
+            } finally {
+                try {
+                    internalCache2.close();
+                } finally {
+                    internalCache3.close();
+                }
+            }
+        }
+
+        assertEquals(0, buffer.refCnt());
     }
 
     private byte[] getAllBytesFromBuffer(ByteBuf buffer) {
@@ -352,6 +466,13 @@ public class CacheTest extends BaseTest {
         assertEquals(bites.length, buffer.capacity());
         byte[] bufferBites = getAllBytesFromBuffer(buffer);
         assertTrue(Arrays.equals(bites, bufferBites));
+    }
+
+    private void assertEqualsByteBuf(ByteBuf b1, ByteBuf b2) {
+        assertEquals(b1.capacity(), b2.capacity());
+        byte[] bites1 = getAllBytesFromBuffer(b1);
+        byte[] bites2 = getAllBytesFromBuffer(b2);
+        assertTrue(Arrays.equals(bites1, bites2));
     }
 
     private void closeThreeCaches(ThreeCaches threeCaches) throws IOException {
@@ -417,11 +538,11 @@ public class CacheTest extends BaseTest {
     }
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
-        return mockCache(nodeId, port, mockBackup());
+        return mockCache(nodeId, port, mockReplicaIdProvider(), mockBackup());
     }
 
-    private InternalCacheImpl mockCache(short nodeId, int port, Backup backup) {
-        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockCacheConfig(), mockServerConfig(port), mockIdAllocatorProvider(), mockReplicaIdProvider(), backup);
+    private InternalCacheImpl mockCache(short nodeId, int port, Provider<ReplicaIdSupplier> replicaIdSupplierProvider, Backup backup) {
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockCacheConfig(), mockServerConfig(port), mockIdAllocatorProvider(), replicaIdSupplierProvider, backup);
     }
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {

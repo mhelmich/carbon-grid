@@ -632,7 +632,10 @@ abstract class Message implements Persistable {
 
         @Override
         BACKUP copy() {
-            return new BACKUP(sender, lineId, leaderEpoch, lastAckedLeaderEpoch, version, buffer);
+            // beware of the reference counting
+            // every time a message is copied, you need to increment the ref count
+            // because sending a buffer decreases it by one
+            return new BACKUP(sender, lineId, leaderEpoch, lastAckedLeaderEpoch, version, buffer.resetReaderIndex().retain());
         }
 
         @Override

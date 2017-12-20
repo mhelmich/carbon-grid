@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -667,8 +668,9 @@ class InternalCacheImpl implements InternalCache {
     void backupCacheLine(long lineId) {
         CacheLine line = owned.get(lineId);
         if (line != null) {
+            localLeaderEpoch++;
             Message backupMsg = new Message.BACKUP(
-                    myNodeId,
+                    myNodeId(),
                     lineId,
                     localLeaderEpoch,
                     localLeaderEpoch,
@@ -676,11 +678,11 @@ class InternalCacheImpl implements InternalCache {
                     line.resetReaderAndGetReadOnlyData()
             );
             try {
-                comms.send(replicaIdSupplierProvider.get().get(), backupMsg);
+                List<Short> replicaIds = replicaIdSupplierProvider.get().get();
+                comms.send(replicaIds, backupMsg);
             } catch (IOException xcp) {
                 throw new RuntimeException(xcp);
             }
-            localLeaderEpoch++;
         }
     }
 
