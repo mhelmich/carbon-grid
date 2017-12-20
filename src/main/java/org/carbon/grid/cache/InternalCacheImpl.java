@@ -17,6 +17,7 @@
 package org.carbon.grid.cache;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.inject.Singleton;
@@ -32,6 +33,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -69,6 +71,10 @@ class InternalCacheImpl implements InternalCache {
     private final NonBlockingHashMapLong<CacheLine> owned = new NonBlockingHashMapLong<>();
     // the cache lines I'm sharing and somebody else owns
     private final NonBlockingHashMapLong<CacheLine> shared = new NonBlockingHashMapLong<>();
+    // this list is collecting all replication futures that are in-flight
+    // after futures complete, they remove themselves out of this list
+    // during a graceful shutdown, the cache is waiting for all these futures to complete before shutting down
+    private final ArrayList<CompletableFuture<Void>> replicationFutures = new ArrayList<>();
 
     final GridCommunications comms;
     private final Provider<Short> myNodeIdProvider;
@@ -668,6 +674,9 @@ class InternalCacheImpl implements InternalCache {
         comms.processMessagesForId(cacheLineId);
     }
 
+    // it's a little unfortunate to have this code here as opposed to in the
+    // Replication class ... I might devise of a grand scheme to redirect
+    // backup messages to the replication class later but for now this will do
     // this is called from a transaction or a put* handler
     // in both cases this nodes acquires ownership of new cache lines
     // and those need to be backed up
@@ -676,7 +685,7 @@ class InternalCacheImpl implements InternalCache {
         replicateCacheLine(line);
     }
 
-    void replicateCacheLine(CacheLine line) {
+    private void replicateCacheLine(CacheLine line) {
         if (line != null) {
             localLeaderEpoch++;
             Message backupMsg = new Message.BACKUP(
@@ -689,7 +698,16 @@ class InternalCacheImpl implements InternalCache {
             );
             try {
                 List<Short> replicaIds = replicaIdSupplierProvider.get().get();
-                comms.send(replicaIds, backupMsg);
+                // collect the completion future
+                CompletableFuture<Void> replicationFuture = comms.send(replicaIds, backupMsg);
+                // add it to the list of futures to wait for a graceful shutdown
+                replicationFutures.add(replicationFuture);
+                // if the future completes, remove it from the list of all futures
+                replicationFuture.thenAcceptAsync((aVoid -> {
+                    synchronized (replicationFutures) {
+                        replicationFutures.remove(replicationFuture);
+                    }
+                }));
             } catch (IOException xcp) {
                 throw new RuntimeException(xcp);
             }
@@ -698,7 +716,29 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public void close() throws IOException {
+        // TODO -- there is a race somewhere when the node shuts down
+        // but still accepts requests and acknowledges puts but at the same time
+        // the defensive copy of the replication futures is made already
+        // that could result in acknowledged changes not being replicated
+        // which is what this code aims to prevent
+        logger.info("Waiting for all replication futures to complete...");
+        List<CompletableFuture<Void>> repFutures;
+        // make a defensive copy
+        synchronized (replicationFutures) {
+            repFutures = ImmutableList.copyOf(replicationFutures);
+        }
+        for (int i = 0; i < repFutures.size(); i++) {
+            CompletableFuture<Void> f = repFutures.get(i);
+            try {
+                f.get(10, TimeUnit.SECONDS);
+            } catch (InterruptedException | ExecutionException | TimeoutException xcp) {
+                logger.error("", xcp);
+            }
+            logger.info("Waited for {} futures. {} more to go...", i, repFutures.size() - i);
+        }
+        logger.info("Shutting down comms...");
         comms.close();
+        logger.info("Releasing local data...");
         for (CacheLine line : owned.values()) {
             line.releaseData();
         }
