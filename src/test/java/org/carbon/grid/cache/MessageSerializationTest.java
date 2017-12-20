@@ -18,18 +18,17 @@ package org.carbon.grid.cache;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
+import org.carbon.grid.BaseTest;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.util.HashSet;
-import java.util.Random;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
 
-public class MessageSerializationTest {
+public class MessageSerializationTest extends BaseTest {
     private static final Message.DeserializationMessageFactory messageFactory = new Message.DeserializationMessageFactory();
-    private final Random random = new Random();
 
     @Test
     public void testSerialization() throws IOException {
@@ -134,13 +133,5 @@ public class MessageSerializationTest {
         }
 
         return message;
-    }
-
-    private ByteBuf newRandomBuffer() {
-        byte[] bites = new byte[1024];
-        random.nextBytes(bites);
-        ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer(1024);
-        buffer.writeBytes(bites);
-        return buffer;
     }
 }
