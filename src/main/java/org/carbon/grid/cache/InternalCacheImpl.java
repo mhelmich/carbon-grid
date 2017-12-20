@@ -78,6 +78,13 @@ class InternalCacheImpl implements InternalCache {
     private final Provider<ReplicaIdSupplier> replicaIdSupplierProvider;
     private final Backup backup;
 
+    // this field establishes a local node state with regards to backups
+    // replica nodes will only back up cache lines that come with a
+    // greater epoch than the one they know
+    // during failover the node with the highest epoch value
+    // will win the leader election
+    private long localLeaderEpoch = Long.MIN_VALUE;
+
     @Inject
     InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.CacheConfig cacheConfig, CarbonGrid.ServerConfig serverConfig, Provider<GloballyUniqueIdAllocator> idAllocatorProvider, Provider<ReplicaIdSupplier> replicaIdSupplierProvider, Backup backup) {
         this.myNodeIdProvider = myNodeIdProvider;
@@ -310,6 +317,8 @@ class InternalCacheImpl implements InternalCache {
             owned.put(putx.lineId, oldLine);
             shared.remove(putx.lineId);
         }
+
+        backupCacheLine(putx.lineId);
     }
 
     private void handlePUT(Message.PUT put) {
@@ -326,6 +335,8 @@ class InternalCacheImpl implements InternalCache {
             line.setState(CacheLineState.SHARED);
             line.setData(put.data);
         }
+
+        backupCacheLine(put.lineId);
     }
 
     private Message.Response handleINV(Message.INV inv) {
@@ -633,6 +644,29 @@ class InternalCacheImpl implements InternalCache {
     // after these cache lines are released, someone needs to process these messages
     void processMessagesForId(long cacheLineId) {
         comms.processMessagesForId(cacheLineId);
+    }
+
+    // this is called from a transaction or a put* handler
+    // in both cases this nodes acquires ownership of new cache lines
+    // and those need to be backed up
+    void backupCacheLine(long lineId) {
+        CacheLine line = owned.get(lineId);
+        if (line != null) {
+            Message backupMsg = new Message.BACKUP(
+                    myNodeId,
+                    lineId,
+                    localLeaderEpoch,
+                    localLeaderEpoch,
+                    line.getVersion(),
+                    line.resetReaderAndGetReadOnlyData()
+            );
+            try {
+                comms.send(replicaIdSupplierProvider.get().get(), backupMsg);
+            } catch (IOException xcp) {
+                throw new RuntimeException(xcp);
+            }
+            localLeaderEpoch++;
+        }
     }
 
     @Override

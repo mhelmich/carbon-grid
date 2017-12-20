@@ -60,19 +60,36 @@ class TransactionImpl implements Transaction {
     @Override
     public void commit() {
         try {
+            try {
+                // validate all changes are able to be applied
+                for (Undo undo : undoInfo.values()) {
+                    CacheLine line = cache.innerGetLineLocally(undo.lineId);
+                    // cache lines need to exist locally
+                    if (line == null) throw new IllegalStateException("Line with id " + undo.lineId + " doesn't exist");
+                    // cache lines need to be locked
+                    if (!line.isLocked()) throw new IllegalStateException("Cache line " + line.getId() + " is not in state locked");
+                    // cache lines need to be in exclusive state
+                    if (!CacheLineState.EXCLUSIVE.equals(line.getState())) throw new IllegalStateException("Cache line with id " + undo.lineId + " is not in EXCLUSIVE state");
+                }
+            } catch (IllegalStateException xcp) {
+                logger.error("Couldn't commit txn. Rolling back...", xcp);
+                // rolling back the transaction
+                rollback();
+                // then returning from this method to not execute the rest of it
+                return;
+            }
+
             // make all data changes
             for (Undo undo : undoInfo.values()) {
                 CacheLine line = cache.innerGetLineLocally(undo.lineId);
-                // cache lines need to exist locally
-                if (line == null) throw new IllegalStateException("Line with id " + undo.lineId + " doesn't exist");
-                // cache lines need to be locked
-                if (!line.isLocked()) throw new IllegalStateException("Cache line " + line.getId() + " is not in state locked");
-                // cache lines need to be in exclusive state
-                if (!CacheLineState.EXCLUSIVE.equals(line.getState())) throw new IllegalStateException("Cache line with id " + undo.lineId + " is not in EXCLUSIVE state");
-
                 line.setOwner(cache.myNodeId());
                 line.setVersion(undo.version);
                 line.setData(undo.buffer);
+            }
+
+            // invoke backup for all committed cache lines
+            for (Long lineId : undoInfo.keySet()) {
+                cache.backupCacheLine(lineId);
             }
             // TODO -- send all messages
         } finally {
