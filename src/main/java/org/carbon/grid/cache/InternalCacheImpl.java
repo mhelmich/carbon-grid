@@ -76,7 +76,7 @@ class InternalCacheImpl implements InternalCache {
     private final CarbonGrid.CacheConfig cacheConfig;
     private final Provider<GloballyUniqueIdAllocator> idAllocatorProvider;
     private final Provider<ReplicaIdSupplier> replicaIdSupplierProvider;
-    private final Backup backup;
+    private final Backup backupModule;
 
     // this field establishes a local node state with regards to backups
     // replica nodes will only back up cache lines that come with a
@@ -86,13 +86,13 @@ class InternalCacheImpl implements InternalCache {
     private long localLeaderEpoch = Long.MIN_VALUE;
 
     @Inject
-    InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.CacheConfig cacheConfig, CarbonGrid.ServerConfig serverConfig, Provider<GloballyUniqueIdAllocator> idAllocatorProvider, Provider<ReplicaIdSupplier> replicaIdSupplierProvider, Backup backup) {
+    InternalCacheImpl(@MyNodeId Provider<Short> myNodeIdProvider, CarbonGrid.CacheConfig cacheConfig, CarbonGrid.ServerConfig serverConfig, Provider<GloballyUniqueIdAllocator> idAllocatorProvider, Provider<ReplicaIdSupplier> replicaIdSupplierProvider, Backup backupModule) {
         this.myNodeIdProvider = myNodeIdProvider;
         this.serverConfig = serverConfig;
         this.cacheConfig = cacheConfig;
         this.idAllocatorProvider = idAllocatorProvider;
         this.replicaIdSupplierProvider = replicaIdSupplierProvider;
-        this.backup = backup;
+        this.backupModule = backupModule;
         this.comms = new GridCommunications(myNodeIdProvider, serverConfig, this);
     }
 
@@ -126,6 +126,9 @@ class InternalCacheImpl implements InternalCache {
             case OWNER_CHANGED:
                 handleOWNER_CHANGED((Message.OWNER_CHANGED)response);
                 return;
+            case BACKUP_ACK:
+                handleBACKUP_ACK((Message.BACKUP_ACK)response);
+                return;
             default:
                 throw new RuntimeException("Unknown type " + response.type);
         }
@@ -147,6 +150,8 @@ class InternalCacheImpl implements InternalCache {
                 return handleGETX((Message.GETX)request);
             case INV:
                 return handleINV((Message.INV)request);
+            case BACKUP:
+                return handleBACKUP((Message.BACKUP)request);
             case REMOVE_BACKUP:
                 return handleREMOVE_BACKUP((Message.REMOVE_BACKUP)request);
             case CHANGE_OWNER:
@@ -396,8 +401,18 @@ class InternalCacheImpl implements InternalCache {
         return null;
     }
 
+    private Message.Response handleBACKUP(Message.BACKUP backup) {
+        CacheLine lineToBackUp = new CacheLine(backup.lineId, backup.version, backup.sender, CacheLineState.INVALID, backup.buffer);
+        backupModule.backUp(backup.sender, backup.leaderEpoch, lineToBackUp);
+        return new Message.BACKUP_ACK(backup.messageSequenceNumber, myNodeId(), backup.lineId, backup.leaderEpoch);
+    }
+
+    private void handleBACKUP_ACK(Message.BACKUP_ACK backupAck) {
+    }
+
     private Message.Response handleREMOVE_BACKUP(Message.REMOVE_BACKUP removeBackup) {
-        return null;
+        backupModule.stopBackupFor(removeBackup.sender);
+        return new Message.BACKUP_ACK(removeBackup.messageSequenceNumber, myNodeId(), removeBackup.lineId, Long.MIN_VALUE);
     }
 
 

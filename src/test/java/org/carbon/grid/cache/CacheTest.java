@@ -28,6 +28,7 @@ import org.mockito.Mockito;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
@@ -36,6 +37,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.when;
 
 public class CacheTest extends BaseTest {
     private static final AtomicLong idAllocator = new AtomicLong(0);
@@ -415,7 +417,11 @@ public class CacheTest extends BaseTest {
     }
 
     private InternalCacheImpl mockCache(short nodeId, int port) {
-        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockCacheConfig(), mockServerConfig(port), mockIdAllocatorProvider(), mockReplicaIdProvider(), mockBackup());
+        return mockCache(nodeId, port, mockBackup());
+    }
+
+    private InternalCacheImpl mockCache(short nodeId, int port, Backup backup) {
+        return new InternalCacheImpl(mockNodeIdProvider(nodeId), mockCacheConfig(), mockServerConfig(port), mockIdAllocatorProvider(), mockReplicaIdProvider(), backup);
     }
 
     private Provider<Short> mockNodeIdProvider(short nodeId) {
@@ -427,7 +433,10 @@ public class CacheTest extends BaseTest {
     }
 
     private Provider<ReplicaIdSupplier> mockReplicaIdProvider() {
-        return () -> Mockito.mock(ReplicaIdSupplier.class);
+        ReplicaIdSupplier supplier = Mockito.mock(ReplicaIdSupplier.class);
+        // fake it so that there are no backups but also no NPEs
+        when(supplier.get()).thenReturn(Collections.emptyList());
+        return () -> supplier;
     }
 
     private Backup mockBackup() {

@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.when;
 
 public class TransactionTest extends BaseTest {
     private static final AtomicLong idAllocator = new AtomicLong(0);
@@ -163,7 +164,10 @@ public class TransactionTest extends BaseTest {
     }
 
     private Provider<ReplicaIdSupplier> mockReplicaIdProvider() {
-        return () -> Mockito.mock(ReplicaIdSupplier.class);
+        ReplicaIdSupplier supplier = Mockito.mock(ReplicaIdSupplier.class);
+        // fake it so that there are no backups but also no NPEs
+        when(supplier.get()).thenReturn(Collections.emptyList());
+        return () -> supplier;
     }
 
     private Backup mockBackup() {

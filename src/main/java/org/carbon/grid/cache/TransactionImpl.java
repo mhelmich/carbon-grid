@@ -57,6 +57,7 @@ class TransactionImpl implements Transaction {
         lockedLines.add(lineId);
     }
 
+    // TODO -- send all messages
     @Override
     public void commit() {
         try {
@@ -75,8 +76,7 @@ class TransactionImpl implements Transaction {
                 logger.error("Couldn't commit txn. Rolling back...", xcp);
                 // rolling back the transaction
                 rollback();
-                // then returning from this method to not execute the rest of it
-                return;
+                throw xcp;
             }
 
             // make all data changes
@@ -91,7 +91,6 @@ class TransactionImpl implements Transaction {
             for (Long lineId : undoInfo.keySet()) {
                 cache.backupCacheLine(lineId);
             }
-            // TODO -- send all messages
         } finally {
             // release all lines
             releaseAllLines();
