@@ -419,18 +419,23 @@ class InternalCacheImpl implements InternalCache {
     }
 
     private Message.Response handleCHANGE_OWNER(Message.CHANGE_OWNER changeOwner) {
+        logger.info("cache handler {} changeOwner: {}", this, changeOwner);
         return null;
     }
 
     private Message.Response handleBACKUP(Message.BACKUP backup) {
+        logger.info("cache handler {} backup: {}", this, backup);
         CacheLine lineToBackUp = new CacheLine(backup.lineId, backup.version, backup.sender, CacheLineState.INVALID, backup.buffer);
         replicationModule.backUp(backup.sender, backup.leaderEpoch, lineToBackUp);
         return new Message.BACKUP_ACK(backup.messageSequenceNumber, myNodeId(), backup.lineId, backup.leaderEpoch);
     }
 
-    private void handleBACKUP_ACK(Message.BACKUP_ACK backupAck) { }
+    private void handleBACKUP_ACK(Message.BACKUP_ACK backupAck) {
+        logger.info("cache handler {} backupAck: {}", this, backupAck);
+    }
 
     private Message.Response handleREMOVE_BACKUP(Message.REMOVE_BACKUP removeBackup) {
+        logger.info("cache handler {} removeBackup: {}", this, removeBackup);
         replicationModule.stopBackupFor(removeBackup.sender);
         return new Message.BACKUP_ACK(removeBackup.messageSequenceNumber, myNodeId(), removeBackup.lineId, Long.MIN_VALUE);
     }
