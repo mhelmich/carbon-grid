@@ -59,11 +59,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * ToDo List:
  * - MOESI coherence protocol implementation
- * - clustering & synchronization (cache line ids, cluster members, ...)
  * - fail over / topology changes / node failures
- * - slab allocation and page management (look into what netty gives you in terms o f pooled allocation)
- * - resilient memory across nodes (striping, backups, ...)
- *
  */
 @Singleton
 class InternalCacheImpl implements InternalCache {
