@@ -24,6 +24,7 @@ import com.google.inject.Singleton;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import org.carbon.grid.CarbonGrid;
+import org.carbon.grid.CarbonGridNodeIsShuttingDownException;
 import org.carbon.grid.cluster.GloballyUniqueIdAllocator;
 import org.carbon.grid.cluster.MyNodeId;
 import org.carbon.grid.cluster.ReplicaIdSupplier;
@@ -42,6 +43,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * This is the main class.
@@ -75,6 +77,7 @@ class InternalCacheImpl implements InternalCache {
     // after futures complete, they remove themselves out of this list
     // during a graceful shutdown, the cache is waiting for all these futures to complete before shutting down
     private final ArrayList<CompletableFuture<Void>> replicationFutures = new ArrayList<>();
+    private final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
 
     final GridCommunications comms;
     private final Provider<Short> myNodeIdProvider;
@@ -186,9 +189,13 @@ class InternalCacheImpl implements InternalCache {
             // this exception bridges multiple levels of abstraction and is only necessary
             // for the first message for a cache line that's coming here
             throw new ShouldNotProcessException("Line is locked");
-        } else {
-            return true;
         }
+
+        if (isShuttingDown.get()) {
+            throw new CarbonGridNodeIsShuttingDownException("Node is shutting down");
+        }
+
+        return true;
     }
 
     private Message.Response handleGETX(Message.GETX getx) {
@@ -455,11 +462,13 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public ByteBuf allocateBuffer(int capacity) {
+        assertNodeIsStillUp();
         return PooledByteBufAllocator.DEFAULT.directBuffer(capacity, getMaxCacheLineSize());
     }
 
     @Override
     public long allocateEmpty(Transaction txn) throws IOException {
+        assertNodeIsStillUp();
         TransactionImpl t = (TransactionImpl) txn;
         long newLineId = nextClusterUniqueCacheLineId();
         CacheLine line = new CacheLine(
@@ -477,6 +486,7 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public long allocateWithData(ByteBuf buffer, Transaction txn) throws IOException {
+        assertNodeIsStillUp();
         TransactionImpl t = (TransactionImpl) txn;
         if (buffer.capacity() > getMaxCacheLineSize()) throw new IllegalArgumentException("Buffer too big! The buffer can only have a max size of " + getMaxCacheLineSize() + " bytes");
 
@@ -497,12 +507,14 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public long allocateWithData(byte[] bites, Transaction txn) throws IOException {
+        assertNodeIsStillUp();
         ByteBuf buffer = allocateBuffer(bites.length).writeBytes(bites);
         return allocateWithData(buffer, txn);
     }
 
     @Override
     public ByteBuf get(long lineId) throws IOException {
+        assertNodeIsStillUp();
         CacheLine line = getLineLocally(lineId);
         if (line == null) {
             CacheLine remoteLine = getLineRemotely(lineId);
@@ -518,6 +530,7 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public ByteBuf getx(long lineId, Transaction txn) throws IOException {
+        assertNodeIsStillUp();
         TransactionImpl t = (TransactionImpl) txn;
         CacheLine line = getxLineRemotely(lineId);
         if (line == null) {
@@ -531,6 +544,7 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public void put(long lineId, ByteBuf buffer, Transaction txn) throws IOException {
+        assertNodeIsStillUp();
         TransactionImpl t = (TransactionImpl) txn;
         CacheLine line = getLineLocally(lineId);
         if (line == null || !CacheLineState.EXCLUSIVE.equals(line.getState())) {
@@ -554,6 +568,7 @@ class InternalCacheImpl implements InternalCache {
 
     @Override
     public Transaction newTransaction() {
+        assertNodeIsStillUp();
         return new TransactionImpl(this);
     }
 
@@ -714,13 +729,15 @@ class InternalCacheImpl implements InternalCache {
         }
     }
 
+    private void assertNodeIsStillUp() {
+        if (isShuttingDown.get()) {
+            throw new CarbonGridNodeIsShuttingDownException("This node is going down...");
+        }
+    }
+
     @Override
     public void close() throws IOException {
-        // TODO -- there is a race somewhere when the node shuts down
-        // but still accepts requests and acknowledges puts but at the same time
-        // the defensive copy of the replication futures is made already
-        // that could result in acknowledged changes not being replicated
-        // which is what this code aims to prevent
+        isShuttingDown.set(true);
         logger.info("Waiting for all replication futures to complete...");
         List<CompletableFuture<Void>> repFutures;
         // make a defensive copy
